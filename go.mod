@@ -1,3 +1,3 @@
-module https://github.com/victorops/go-victorops.git
+module github.com/victorops/go-victorops.git
 
 go 1.14
