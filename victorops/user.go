@@ -3,6 +3,7 @@ package victorops
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/url"
 )
 
@@ -24,6 +25,16 @@ type UserList struct {
 	Users [][]User `json:"users"`
 }
 
+// UserListV2 is a list of Users for Version 2
+type UserListV2 struct {
+	Users []User `json:"users"`
+}
+
+const (
+	userV1Endpoint = "v1/user"
+	userV2Endpoint = "v2/user"
+)
+
 func parseUserResponse(response string) (*User, error) {
 	// Parse the response and return the user object
 	var user User
@@ -43,7 +54,7 @@ func (c Client) CreateUser(user *User) (*User, *RequestDetails, error) {
 	}
 
 	// Make the request
-	details, err := c.makePublicAPICall("POST", "v1/user", bytes.NewBuffer(jsonUser), nil)
+	details, err := c.makePublicAPICall("POST", userV1Endpoint, bytes.NewBuffer(jsonUser), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -59,7 +70,7 @@ func (c Client) CreateUser(user *User) (*User, *RequestDetails, error) {
 // GetUser returns a specific user within this victorops organization
 func (c Client) GetUser(username string) (*User, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", "v1/user/"+url.QueryEscape(username), bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall("GET", userV1Endpoint+"/"+url.QueryEscape(username), bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -77,7 +88,7 @@ func (c Client) GetUser(username string) (*User, *RequestDetails, error) {
 // DeleteUser deletes a user from the victorops org
 func (c Client) DeleteUser(username string, replacementUser string) (*RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("DELETE", "v1/user/"+url.QueryEscape(username), bytes.NewBufferString("{\"replacement\": \""+replacementUser+"\"}"), nil)
+	details, err := c.makePublicAPICall("DELETE", userV1Endpoint+"/"+url.QueryEscape(username), bytes.NewBufferString("{\"replacement\": \""+replacementUser+"\"}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -90,12 +101,39 @@ func (c Client) DeleteUser(username string, replacementUser string) (*RequestDet
 // GetAllUsers returns a list of all of the users in the victorops org
 func (c Client) GetAllUsers() (*UserList, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", "v1/user", bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall("GET", userV1Endpoint, bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, details, err
 	}
 
 	var userList UserList
+	err = json.Unmarshal([]byte(details.ResponseBody), &userList)
+	if err != nil {
+		return nil, details, err
+	}
+
+	return &userList, details, nil
+}
+
+// GetAllUserV2 returns a list of all of the users in the victorops org
+func (c Client) GetAllUserV2() (*UserListV2, *RequestDetails, error) {
+	return c.getAllUsersV2(userV2Endpoint)
+}
+
+// GetUserByEmail returns a list of all of the user(s) in the victorops org that matches the given email
+func (c Client) GetUserByEmail(email string) (*UserListV2, *RequestDetails, error) {
+	endpoint := fmt.Sprintf("%s?email=%s", userV2Endpoint, email)
+	return c.getAllUsersV2(endpoint)
+}
+
+func (c Client) getAllUsersV2(endpoint string) (*UserListV2, *RequestDetails, error) {
+	// Make the request
+	details, err := c.makePublicAPICall("GET", endpoint, bytes.NewBufferString("{}"), nil)
+	if err != nil {
+		return nil, details, err
+	}
+
+	var userList UserListV2
 	err = json.Unmarshal([]byte(details.ResponseBody), &userList)
 	if err != nil {
 		return nil, details, err
@@ -112,7 +150,7 @@ func (c Client) UpdateUser(user *User) (*User, *RequestDetails, error) {
 	}
 
 	// Make the request
-	details, err := c.makePublicAPICall("PUT", "v1/user/"+url.QueryEscape(user.Username), bytes.NewBuffer(jsonUser), nil)
+	details, err := c.makePublicAPICall("PUT", userV1Endpoint+"/"+url.QueryEscape(user.Username), bytes.NewBuffer(jsonUser), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -133,7 +171,7 @@ type emailsResponse struct {
 // TODO: Utilize the contact method methods for this
 func (c Client) GetUserDefaultEmailContactID(username string) (float64, *RequestDetails, error) {
 	// Make the request
-	requestDetails, err := c.makePublicAPICall("GET", "v1/user/"+url.QueryEscape(username)+"/contact-methods/emails", bytes.NewBufferString("{}"), nil)
+	requestDetails, err := c.makePublicAPICall("GET", userV1Endpoint+"/"+url.QueryEscape(username)+"/contact-methods/emails", bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return 0, requestDetails, err
 	}
