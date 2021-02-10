@@ -100,3 +100,8 @@ func NewConfigurableClient(apiID string, apiKey string, publicBaseURL string, ar
 
 	return &client
 }
+
+// GetHTTPClient returns http client for the purpose of test
+func (c Client) GetHTTPClient() *http.Client {
+	return &c.httpClient
+}
