@@ -49,6 +49,9 @@ func TestConfigurableClient(t *testing.T) {
 
 	testConfigurableClient := NewConfigurableClient("apiID", "apiKey", testServer.URL, args)
 	log.Printf("Client instantiated: %s", testConfigurableClient.publicBaseURL)
+	if testConfigurableClient.GetHTTPClient() == nil {
+		t.Errorf("http client is nil")
+	}
 }
 
 func TestConfigurableClientTimeout(t *testing.T) {
