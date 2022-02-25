@@ -2,7 +2,7 @@
 A VictorOps client for golang.
 
 ## Installation
-`go get https://github.com/victorops/go-victorops.git`
+`go get github.com/victorops/go-victorops`
 
 ## Important Note
 
