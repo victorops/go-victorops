@@ -2,7 +2,7 @@
 A VictorOps client for golang.
 
 ## Installation
-`go get https://github.com/victorops/go-victorops.git`
+`go get "github.com/victorops/go-victorops/victorops"`
 
 ## Important Note
 
@@ -15,7 +15,7 @@ package main
 import (
 	"fmt"
 
-	"https://github.com/victorops/go-victorops.git"
+	"github.com/victorops/go-victorops/victorops"
 )
 
 func main() {
