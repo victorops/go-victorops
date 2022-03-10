@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httputil"
+	"time"
 )
 
 // Client is the main client for interacting with victorops
@@ -84,7 +85,7 @@ func (c Client) makePublicAPICall(method string, endpoint string, requestBody io
 
 // NewClient creates a new VictorOps client
 func NewClient(apiID string, apiKey string, publicBaseURL string) *Client {
-	return NewConfigurableClient(apiID, apiKey, publicBaseURL, http.Client{Timeout: 30})
+	return NewConfigurableClient(apiID, apiKey, publicBaseURL, http.Client{Timeout: time.Second * 30})
 }
 
 // NewConfigurableClient creates a new VictorOps client with ClientArgs struct
