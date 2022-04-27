@@ -61,6 +61,24 @@ type ApiUserSchedule struct {
 	Schedules []ApiTeamSchedule `json:"teamSchedules,omitempty"`
 }
 
+type ApiOnCallUser struct {
+	OnCallUser ApiUser `json:"onCallUser,omitempty"`
+}
+
+type ApiOnCallNow struct {
+	EscalationPolicy ApiEscalationPolicy `json:"escalationPolicy,omitempty"`
+	Users            []ApiOnCallUser     `json:"users,omitempty"`
+}
+
+type ApiTeamOnCall struct {
+	Team      ApiTeam        `json:"team,omitempty"`
+	OnCallNow []ApiOnCallNow `json:"onCallNow,omitempty"`
+}
+
+type ApiTeamsOnCall struct {
+	TeamsOnCall []ApiTeamOnCall `json:"teamsOnCall,omitempty"`
+}
+
 type TakeRequest struct {
 	FromUser string `json:"fromUser,omitempty"`
 	ToUser   string `json:"toUser,omitempty"`
@@ -92,6 +110,17 @@ func parseApiUserScheduleResponse(response string) (*ApiUserSchedule, error) {
 	return &schedule, err
 }
 
+func parseGetOnCallCurrentResponse(response string) (*ApiTeamsOnCall, error) {
+	// Parse the response and return the object
+	var oncall ApiTeamsOnCall
+	err := json.Unmarshal([]byte(response), &oncall)
+	if err != nil {
+		return nil, err
+	}
+
+	return &oncall, err
+}
+
 func parseTakeResponse(response string) (*TakeResponse, error) {
 	// Parse the response and return the user object
 	var take TakeResponse
@@ -101,6 +130,23 @@ func parseTakeResponse(response string) (*TakeResponse, error) {
 	}
 
 	return &take, err
+}
+
+// Get all current on-call personnel
+func (c Client) GetOnCallCurrent() (*ApiTeamsOnCall, *RequestDetails, error) {
+	details, err := c.makePublicAPICall("GET", "v1/oncall/current", bytes.NewBufferString("{}"), nil)
+
+	// Check for errors
+	if err != nil {
+		return nil, details, err
+	}
+
+	oncall, err := parseGetOnCallCurrentResponse(details.ResponseBody)
+	if err != nil {
+		return oncall, details, err
+	}
+
+	return oncall, details, nil
 }
 
 func (c Client) GetApiTeamSchedule(teamSlug string, daysForward int, daysSkip int, step int) (*ApiTeamSchedule, *RequestDetails, error) {
