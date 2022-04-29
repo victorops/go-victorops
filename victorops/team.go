@@ -14,6 +14,7 @@ type Team struct {
 	MemberCount   int    `json:"memberCount,omitempty"`
 	Version       int    `json:"version,omitempty"`
 	IsDefaultTeam bool   `json:"isDefaultTeam,omitempty"`
+	Description   string `json:"description"`
 }
 
 // TeamMembers contains membership details for a team
