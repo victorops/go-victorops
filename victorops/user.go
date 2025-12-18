@@ -2,6 +2,7 @@ package victorops
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -47,14 +48,14 @@ func parseUserResponse(response string) (*User, error) {
 }
 
 // CreateUser creates a user in the victorops organization
-func (c Client) CreateUser(user *User) (*User, *RequestDetails, error) {
+func (c *Client) CreateUser(ctx context.Context, user *User) (*User, *RequestDetails, error) {
 	jsonUser, err := json.Marshal(user)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Make the request
-	details, err := c.makePublicAPICall("POST", userV1Endpoint, bytes.NewBuffer(jsonUser), nil)
+	details, err := c.makePublicAPICall(ctx, "POST", userV1Endpoint, bytes.NewBuffer(jsonUser), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -68,9 +69,9 @@ func (c Client) CreateUser(user *User) (*User, *RequestDetails, error) {
 }
 
 // GetUser returns a specific user within this victorops organization
-func (c Client) GetUser(username string) (*User, *RequestDetails, error) {
+func (c *Client) GetUser(ctx context.Context, username string) (*User, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", userV1Endpoint+"/"+url.QueryEscape(username), bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", userV1Endpoint+"/"+url.QueryEscape(username), bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -86,9 +87,9 @@ func (c Client) GetUser(username string) (*User, *RequestDetails, error) {
 }
 
 // DeleteUser deletes a user from the victorops org
-func (c Client) DeleteUser(username string, replacementUser string) (*RequestDetails, error) {
+func (c *Client) DeleteUser(ctx context.Context, username string, replacementUser string) (*RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("DELETE", userV1Endpoint+"/"+url.QueryEscape(username), bytes.NewBufferString("{\"replacement\": \""+replacementUser+"\"}"), nil)
+	details, err := c.makePublicAPICall(ctx, "DELETE", userV1Endpoint+"/"+url.QueryEscape(username), bytes.NewBufferString("{\"replacement\": \""+replacementUser+"\"}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -99,9 +100,9 @@ func (c Client) DeleteUser(username string, replacementUser string) (*RequestDet
 }
 
 // GetAllUsers returns a list of all of the users in the victorops org
-func (c Client) GetAllUsers() (*UserList, *RequestDetails, error) {
+func (c *Client) GetAllUsers(ctx context.Context) (*UserList, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", userV1Endpoint, bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", userV1Endpoint, bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -116,19 +117,19 @@ func (c Client) GetAllUsers() (*UserList, *RequestDetails, error) {
 }
 
 // GetAllUserV2 returns a list of all of the users in the victorops org
-func (c Client) GetAllUserV2() (*UserListV2, *RequestDetails, error) {
-	return c.getAllUsersV2(userV2Endpoint)
+func (c *Client) GetAllUserV2(ctx context.Context) (*UserListV2, *RequestDetails, error) {
+	return c.getAllUsersV2(ctx, userV2Endpoint)
 }
 
 // GetUserByEmail returns a list of all of the user(s) in the victorops org that matches the given email
-func (c Client) GetUserByEmail(email string) (*UserListV2, *RequestDetails, error) {
+func (c *Client) GetUserByEmail(ctx context.Context, email string) (*UserListV2, *RequestDetails, error) {
 	endpoint := fmt.Sprintf("%s?email=%s", userV2Endpoint, email)
-	return c.getAllUsersV2(endpoint)
+	return c.getAllUsersV2(ctx, endpoint)
 }
 
-func (c Client) getAllUsersV2(endpoint string) (*UserListV2, *RequestDetails, error) {
+func (c *Client) getAllUsersV2(ctx context.Context, endpoint string) (*UserListV2, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", endpoint, bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", endpoint, bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -143,14 +144,14 @@ func (c Client) getAllUsersV2(endpoint string) (*UserListV2, *RequestDetails, er
 }
 
 // UpdateUser updates a victorops user
-func (c Client) UpdateUser(user *User) (*User, *RequestDetails, error) {
+func (c *Client) UpdateUser(ctx context.Context, user *User) (*User, *RequestDetails, error) {
 	jsonUser, err := json.Marshal(user)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Make the request
-	details, err := c.makePublicAPICall("PUT", userV1Endpoint+"/"+url.QueryEscape(user.Username), bytes.NewBuffer(jsonUser), nil)
+	details, err := c.makePublicAPICall(ctx, "PUT", userV1Endpoint+"/"+url.QueryEscape(user.Username), bytes.NewBuffer(jsonUser), nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -169,9 +170,9 @@ type emailsResponse struct {
 
 // GetUserDefaultEmailContactID returns the id of the default email contact for a user
 // TODO: Utilize the contact method methods for this
-func (c Client) GetUserDefaultEmailContactID(username string) (float64, *RequestDetails, error) {
+func (c *Client) GetUserDefaultEmailContactID(ctx context.Context, username string) (float64, *RequestDetails, error) {
 	// Make the request
-	requestDetails, err := c.makePublicAPICall("GET", userV1Endpoint+"/"+url.QueryEscape(username)+"/contact-methods/emails", bytes.NewBufferString("{}"), nil)
+	requestDetails, err := c.makePublicAPICall(ctx, "GET", userV1Endpoint+"/"+url.QueryEscape(username)+"/contact-methods/emails", bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return 0, requestDetails, err
 	}

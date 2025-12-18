@@ -2,6 +2,7 @@ package victorops
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -103,8 +104,8 @@ func parseTakeResponse(response string) (*TakeResponse, error) {
 	return &take, err
 }
 
-func (c Client) GetApiTeamSchedule(teamSlug string, daysForward int, daysSkip int, step int) (*ApiTeamSchedule, *RequestDetails, error) {
-	details, err := c.makePublicAPICall("GET", fmt.Sprintf("v2/team/%s/oncall/schedule?daysForward=%v&daysSkip=%v&step=%v", teamSlug, daysForward, daysSkip, step), bytes.NewBufferString("{}"), nil)
+func (c *Client) GetApiTeamSchedule(ctx context.Context, teamSlug string, daysForward int, daysSkip int, step int) (*ApiTeamSchedule, *RequestDetails, error) {
+	details, err := c.makePublicAPICall(ctx, "GET", fmt.Sprintf("v2/team/%s/oncall/schedule?daysForward=%v&daysSkip=%v&step=%v", teamSlug, daysForward, daysSkip, step), bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -119,8 +120,8 @@ func (c Client) GetApiTeamSchedule(teamSlug string, daysForward int, daysSkip in
 	return schedule, details, nil
 }
 
-func (c Client) GetUserOnCallSchedule(userName string, daysForward int, daysSkip int, step int) (*ApiUserSchedule, *RequestDetails, error) {
-	details, err := c.makePublicAPICall("GET", fmt.Sprintf("v2/user/%s/oncall/schedule?daysForward=%v&daysSkip=%v&step=%v", userName, daysForward, daysSkip, step), bytes.NewBufferString("{}"), nil)
+func (c *Client) GetUserOnCallSchedule(ctx context.Context, userName string, daysForward int, daysSkip int, step int) (*ApiUserSchedule, *RequestDetails, error) {
+	details, err := c.makePublicAPICall(ctx, "GET", fmt.Sprintf("v2/user/%s/oncall/schedule?daysForward=%v&daysSkip=%v&step=%v", userName, daysForward, daysSkip, step), bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -135,13 +136,13 @@ func (c Client) GetUserOnCallSchedule(userName string, daysForward int, daysSkip
 	return schedule, details, nil
 }
 
-func (c Client) TakeOnCallForTeam(teamSlug string, req *TakeRequest) (*TakeResponse, *RequestDetails, error) {
+func (c *Client) TakeOnCallForTeam(ctx context.Context, teamSlug string, req *TakeRequest) (*TakeResponse, *RequestDetails, error) {
 	jsonReq, err := json.Marshal(req)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	details, err := c.makePublicAPICall("PATCH", fmt.Sprintf("v1/team/%s/oncall/user", teamSlug), bytes.NewBuffer(jsonReq), nil)
+	details, err := c.makePublicAPICall(ctx, "PATCH", fmt.Sprintf("v1/team/%s/oncall/user", teamSlug), bytes.NewBuffer(jsonReq), nil)
 
 	// Check for errors
 	if err != nil {
@@ -156,13 +157,13 @@ func (c Client) TakeOnCallForTeam(teamSlug string, req *TakeRequest) (*TakeRespo
 	return take, details, nil
 }
 
-func (c Client) TakeOnCallForPolicy(policySlug string, req *TakeRequest) (*TakeResponse, *RequestDetails, error) {
+func (c *Client) TakeOnCallForPolicy(ctx context.Context, policySlug string, req *TakeRequest) (*TakeResponse, *RequestDetails, error) {
 	jsonReq, err := json.Marshal(req)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	details, err := c.makePublicAPICall("PATCH", fmt.Sprintf("v1/policies/%s/oncall/user", policySlug), bytes.NewBuffer(jsonReq), nil)
+	details, err := c.makePublicAPICall(ctx, "PATCH", fmt.Sprintf("v1/policies/%s/oncall/user", policySlug), bytes.NewBuffer(jsonReq), nil)
 
 	// Check for errors
 	if err != nil {

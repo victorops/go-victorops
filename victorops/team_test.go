@@ -1,6 +1,7 @@
 package victorops
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"testing"
@@ -33,7 +34,7 @@ func TestCreateTeam(t *testing.T) {
 		IsDefaultTeam: false,
 	}
 
-	resp, _, err := testClient.CreateTeam(team)
+	resp, _, err := testClient.CreateTeam(context.Background(), team)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func TestCreateTeamUnavailableTeamname(t *testing.T) {
 		IsDefaultTeam: false,
 	}
 
-	resp, _, err := testClient.CreateTeam(team)
+	resp, _, err := testClient.CreateTeam(context.Background(), team)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +106,7 @@ func TestCreateTeamInvalidResponse(t *testing.T) {
 		IsDefaultTeam: false,
 	}
 
-	_, _, err := testClient.CreateTeam(team)
+	_, _, err := testClient.CreateTeam(context.Background(), team)
 
 	if err.Error() != "invalid character 'C' looking for beginning of value" {
 		t.Errorf("expected CreateUser to error out on an invalid response from the server")

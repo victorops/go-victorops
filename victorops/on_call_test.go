@@ -1,6 +1,7 @@
 package victorops
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -54,7 +55,7 @@ func TestGetApiTeamSchedule(t *testing.T) {
         `))
 	})
 
-	resp, _, err := testClient.GetApiTeamSchedule("teamSlug", 14, 0, 0)
+	resp, _, err := testClient.GetApiTeamSchedule(context.Background(), "teamSlug", 14, 0, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +155,7 @@ func TestGetUserSchedule(t *testing.T) {
         `))
 	})
 
-	resp, _, err := testClient.GetUserOnCallSchedule("janedoe", 14, 0, 0)
+	resp, _, err := testClient.GetUserOnCallSchedule(context.Background(), "janedoe", 14, 0, 0)
 	if err != nil {
 		fmt.Println(err)
 		t.Fatal(err)
@@ -218,7 +219,7 @@ func TestTakeOnCallForTeam(t *testing.T) {
 		w.Write([]byte(`{"result":"ok"}`))
 	})
 
-	resp, _, err := testClient.TakeOnCallForTeam("team-abcd", &TakeRequest{
+	resp, _, err := testClient.TakeOnCallForTeam(context.Background(), "team-abcd", &TakeRequest{
 		FromUser: "janedoe",
 		ToUser:   "johndoe",
 	})
@@ -245,7 +246,7 @@ func TestTakeOnCallForPolicy(t *testing.T) {
 		w.Write([]byte(`{"result":"ok"}`))
 	})
 
-	resp, _, err := testClient.TakeOnCallForPolicy("pol-abcd", &TakeRequest{
+	resp, _, err := testClient.TakeOnCallForPolicy(context.Background(), "pol-abcd", &TakeRequest{
 		FromUser: "janedoe",
 		ToUser:   "johndoe",
 	})

@@ -1,6 +1,7 @@
 package victorops
 
 import (
+	"context"
 	"net/http"
 	"reflect"
 	"testing"
@@ -35,7 +36,7 @@ func TestCreateUser(t *testing.T) {
 		ExpirationHours: 24,
 	}
 
-	resp, _, err := testClient.CreateUser(user)
+	resp, _, err := testClient.CreateUser(context.Background(), user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +78,7 @@ func TestCreateUserUnavailableUsername(t *testing.T) {
 		ExpirationHours: 24,
 	}
 
-	resp, _, err := testClient.CreateUser(user)
+	resp, _, err := testClient.CreateUser(context.Background(), user)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +120,7 @@ func TestCreateUserInvalidResponse(t *testing.T) {
 		ExpirationHours: 24,
 	}
 
-	_, _, err := testClient.CreateUser(user)
+	_, _, err := testClient.CreateUser(context.Background(), user)
 
 	if err.Error() != "invalid character 'C' looking for beginning of value" {
 		t.Errorf("expected CreateUser to error out on an invalid response from the server")
@@ -149,7 +150,7 @@ func TestGetAllUsersV2(t *testing.T) {
 		}`))
 	})
 
-	resp, _, err := testClient.GetAllUserV2()
+	resp, _, err := testClient.GetAllUserV2(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func TestGetAllUsersV2WrongFormat(t *testing.T) {
 		}`))
 	})
 
-	resp, _, err := testClient.GetAllUserV2()
+	resp, _, err := testClient.GetAllUserV2(context.Background())
 	if err == nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func TestGetUsersByEmailV2(t *testing.T) {
 		}`))
 	})
 
-	resp, _, err := testClient.GetUserByEmail(testEmail)
+	resp, _, err := testClient.GetUserByEmail(context.Background(), testEmail)
 	if err != nil {
 		t.Fatal(err)
 	}
