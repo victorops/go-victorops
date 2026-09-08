@@ -2,13 +2,24 @@ package victorops
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"net/url"
 )
 
 // RoutingKey is a struct to hold the data for a victorops routing key.
 type RoutingKey struct {
 	RoutingKey string   `json:"routingKey,omitempty"`
 	Targets    []string `json:"targets,omitempty"`
+}
+
+// RoutingKeyUpdatePayload is the request body for updating a routing key. The
+// routingKey value replaces the key named in the path; targets is the list of
+// escalation policy slugs the key targets.
+type RoutingKeyUpdatePayload struct {
+	RoutingKey       string   `json:"routingKey"`
+	Targets          []string `json:"targets"`
+	IsMultiResponder bool     `json:"isMultiResponder,omitempty"`
 }
 
 func parseRoutingKeyResponse(response string) (*RoutingKey, error) {
@@ -50,14 +61,14 @@ func parseRoutingKeyListResponse(response string) (*RoutingKeyResponseList, erro
 }
 
 // CreateRoutingKey creates a routingkey in the victorops organization
-func (c Client) CreateRoutingKey(routingKey *RoutingKey) (*RoutingKey, *RequestDetails, error) {
+func (c *Client) CreateRoutingKey(ctx context.Context, routingKey *RoutingKey) (*RoutingKey, *RequestDetails, error) {
 	jsonRk, err := json.Marshal(routingKey)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Make the request
-	details, err := c.makePublicAPICall("POST", "v1/org/routing-keys", bytes.NewBuffer(jsonRk), nil)
+	details, err := c.makePublicAPICall(ctx, "POST", "v1/org/routing-keys", bytes.NewBuffer(jsonRk), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -71,9 +82,9 @@ func (c Client) CreateRoutingKey(routingKey *RoutingKey) (*RoutingKey, *RequestD
 }
 
 // GetRoutingKey returns a specific routingkey within this victorops organization
-func (c Client) GetRoutingKey(keyname string) (*RoutingKeyResponse, *RequestDetails, error) {
+func (c *Client) GetRoutingKey(ctx context.Context, keyname string) (*RoutingKeyResponse, *RequestDetails, error) {
 
-	rkList, details, err := c.GetAllRoutingKeys()
+	rkList, details, err := c.GetAllRoutingKeys(ctx)
 	// Check for errors
 	if err != nil {
 		return nil, details, err
@@ -88,10 +99,37 @@ func (c Client) GetRoutingKey(keyname string) (*RoutingKeyResponse, *RequestDeta
 	return nil, details, nil
 }
 
+// UpdateRoutingKey updates an existing routing key's target escalation policies.
+// The default routing key cannot be updated.
+func (c *Client) UpdateRoutingKey(ctx context.Context, routingKey string, payload *RoutingKeyUpdatePayload) (*RoutingKey, *RequestDetails, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	details, err := c.makePublicAPICall(ctx, "PUT", "v1/org/routing-keys/"+url.PathEscape(routingKey), bytes.NewBuffer(body), nil)
+	if err != nil {
+		return nil, details, err
+	}
+
+	updated, err := parseRoutingKeyResponse(details.ResponseBody)
+	if err != nil {
+		return updated, details, err
+	}
+
+	return updated, details, nil
+}
+
+// DeleteRoutingKey deletes a routing key by its name. The default routing key cannot be deleted.
+func (c *Client) DeleteRoutingKey(ctx context.Context, routingKey string) (*RequestDetails, error) {
+	details, err := c.makePublicAPICall(ctx, "DELETE", "v1/org/routing-keys/"+url.PathEscape(routingKey), bytes.NewBufferString("{}"), nil)
+	return details, err
+}
+
 // GetAllRoutingKeys returns a list of all of the routing keys for an account
-func (c Client) GetAllRoutingKeys() (*RoutingKeyResponseList, *RequestDetails, error) {
+func (c *Client) GetAllRoutingKeys(ctx context.Context) (*RoutingKeyResponseList, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", "v1/org/routing-keys", bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/org/routing-keys", bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, details, err
 	}

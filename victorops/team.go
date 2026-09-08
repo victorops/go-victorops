@@ -2,6 +2,7 @@ package victorops
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/url"
 	"strings"
@@ -11,6 +12,7 @@ import (
 type Team struct {
 	Name          string `json:"name,omitempty"`
 	Slug          string `json:"slug,omitempty"`
+	Description   string `json:"description,omitempty"`
 	MemberCount   int    `json:"memberCount,omitempty"`
 	Version       int    `json:"version,omitempty"`
 	IsDefaultTeam bool   `json:"isDefaultTeam,omitempty"`
@@ -66,14 +68,14 @@ func parseTeamAdminsResponse(response string) (*TeamAdmins, error) {
 }
 
 // CreateTeam creates a team in the victorops organization
-func (c Client) CreateTeam(team *Team) (*Team, *RequestDetails, error) {
+func (c *Client) CreateTeam(ctx context.Context, team *Team) (*Team, *RequestDetails, error) {
 	jsonTeam, err := json.Marshal(team)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Make the request
-	details, err := c.makePublicAPICall("POST", "v1/team", bytes.NewBuffer(jsonTeam), nil)
+	details, err := c.makePublicAPICall(ctx, "POST", "v1/team", bytes.NewBuffer(jsonTeam), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -87,9 +89,9 @@ func (c Client) CreateTeam(team *Team) (*Team, *RequestDetails, error) {
 }
 
 // GetTeam returns a specific team within this victorops organization
-func (c Client) GetTeam(teamID string) (*Team, *RequestDetails, error) {
+func (c *Client) GetTeam(ctx context.Context, teamID string) (*Team, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", "v1/team/"+teamID, bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/team/"+url.PathEscape(teamID), bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -105,9 +107,9 @@ func (c Client) GetTeam(teamID string) (*Team, *RequestDetails, error) {
 }
 
 // GetAllTeams returns a list of all team within this victorops organization
-func (c Client) GetAllTeams() (*[]Team, *RequestDetails, error) {
+func (c *Client) GetAllTeams(ctx context.Context) (*[]Team, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", "v1/team", bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/team", bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -124,9 +126,9 @@ func (c Client) GetAllTeams() (*[]Team, *RequestDetails, error) {
 }
 
 // GetTeamMembers returns a members on a team within this victorops organization
-func (c Client) GetTeamMembers(teamID string) (*TeamMembers, *RequestDetails, error) {
+func (c *Client) GetTeamMembers(ctx context.Context, teamID string) (*TeamMembers, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", "v1/team/"+teamID+"/members", bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/team/"+url.PathEscape(teamID)+"/members", bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -142,9 +144,9 @@ func (c Client) GetTeamMembers(teamID string) (*TeamMembers, *RequestDetails, er
 }
 
 // DeleteTeam deletes a team from this victorops org
-func (c Client) DeleteTeam(teamID string) (*RequestDetails, error) {
+func (c *Client) DeleteTeam(ctx context.Context, teamID string) (*RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("DELETE", "v1/team/"+teamID, bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "DELETE", "v1/team/"+url.PathEscape(teamID), bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
@@ -154,17 +156,18 @@ func (c Client) DeleteTeam(teamID string) (*RequestDetails, error) {
 	return details, nil
 }
 
-// UpdateTeam updates a victorops user
-func (c Client) UpdateTeam(team *Team) (*Team, *RequestDetails, error) {
+// UpdateTeam updates a team in the victorops organization. The team is
+// identified by its Slug (as with GetTeam/DeleteTeam), not its display name.
+func (c *Client) UpdateTeam(ctx context.Context, team *Team) (*Team, *RequestDetails, error) {
 	jsonTeam, err := json.Marshal(team)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	// Make the request
-	details, err := c.makePublicAPICall("PUT", "v1/team/"+team.Name, bytes.NewBuffer(jsonTeam), nil)
+	details, err := c.makePublicAPICall(ctx, "PUT", "v1/team/"+url.PathEscape(team.Slug), bytes.NewBuffer(jsonTeam), nil)
 	if err != nil {
-		return nil, nil, err
+		return nil, details, err
 	}
 
 	newTeam, err := parseTeamResponse(details.ResponseBody)
@@ -176,21 +179,31 @@ func (c Client) UpdateTeam(team *Team) (*Team, *RequestDetails, error) {
 }
 
 // AddTeamMember adds a member to a victorops team.
-func (c Client) AddTeamMember(teamID string, username string) (*RequestDetails, error) {
-	details, err := c.makePublicAPICall("POST", "v1/team/"+teamID+"/members", bytes.NewBufferString("{\"username\": \""+username+"\"}"), nil)
+func (c *Client) AddTeamMember(ctx context.Context, teamID string, username string) (*RequestDetails, error) {
+	body, err := json.Marshal(map[string]string{"username": username})
+	if err != nil {
+		return nil, err
+	}
+
+	details, err := c.makePublicAPICall(ctx, "POST", "v1/team/"+url.PathEscape(teamID)+"/members", bytes.NewBuffer(body), nil)
 	return details, err
 }
 
 // RemoveTeamMember Removes a member from a victorops team
-func (c Client) RemoveTeamMember(teamID string, username string, replacement string) (*RequestDetails, error) {
-	details, err := c.makePublicAPICall("DELETE", "v1/team/"+teamID+"/members/"+url.QueryEscape(username), bytes.NewBufferString("{\"replacement\":\""+replacement+"\"}"), nil)
+func (c *Client) RemoveTeamMember(ctx context.Context, teamID string, username string, replacement string) (*RequestDetails, error) {
+	body, err := json.Marshal(map[string]string{"replacement": replacement})
+	if err != nil {
+		return nil, err
+	}
+
+	details, err := c.makePublicAPICall(ctx, "DELETE", "v1/team/"+url.PathEscape(teamID)+"/members/"+url.PathEscape(username), bytes.NewBuffer(body), nil)
 	return details, err
 }
 
 // IsTeamMember Returns wether or not a user is in a specific victorops team
 // TODO: Maybe we should do this using the v1/user/{username}/teams endpoint instead
-func (c Client) IsTeamMember(teamID string, username string) (bool, *RequestDetails, error) {
-	members, details, err := c.GetTeamMembers(teamID)
+func (c *Client) IsTeamMember(ctx context.Context, teamID string, username string) (bool, *RequestDetails, error) {
+	members, details, err := c.GetTeamMembers(ctx, teamID)
 	if err != nil {
 		return false, details, err
 	}
@@ -204,9 +217,9 @@ func (c Client) IsTeamMember(teamID string, username string) (bool, *RequestDeta
 }
 
 // GetTeamAdmins returns a list of admins for this team
-func (c Client) GetTeamAdmins(teamID string) (*TeamAdmins, *RequestDetails, error) {
+func (c *Client) GetTeamAdmins(ctx context.Context, teamID string) (*TeamAdmins, *RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("GET", "v1/team/"+teamID+"/admins", bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/team/"+url.PathEscape(teamID)+"/admins", bytes.NewBufferString("{}"), nil)
 
 	// Check for errors
 	if err != nil {
