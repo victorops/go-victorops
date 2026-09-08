@@ -233,8 +233,8 @@ if err != nil {
 
 ### Rotation Groups
 - `CreateRotationGroup` – create a rotation group (optionally with shifts)
-- `GetRotationGroup` – get a rotation group by ID †
-- `UpdateRotationGroup` – rename a rotation group †
+- `GetRotationGroup` – get a rotation group by ID
+- `UpdateRotationGroup` – rename a rotation group
 - `DeleteRotationGroup` – delete a rotation group
 - `CreateRotationShift` – add a shift to a group
 - `GetRotationShift` – get a shift
@@ -242,14 +242,9 @@ if err != nil {
 - `DeleteRotationShift` – delete a shift
 - `AddRotationShiftMember` – add a member to a shift
 - `RemoveRotationShiftMember` – remove a member from a shift
-- `UpdateRotationShiftMemberPosition` – reposition a shift member †
+- `UpdateRotationShiftMemberPosition` – reposition a shift member
 - `GetScheduledShiftUser` – get the scheduled user for a shift
 - `SetScheduledShiftUser` – set the scheduled user for a shift
-
-† These endpoints (`GET`/`PUT /rotations/{groupId}` and
-`PUT /rotations/{groupId}/{shiftId}/members`) are documented in the public API but may not be
-enabled in every organization's API gateway. Where they are missing they return a
-gateway-level `404 {"message":"Not Found"}`; create/delete are unaffected.
 
 ### Personal Paging Policies
 - `GetUserPolicies` – get a user's paging policies summary
