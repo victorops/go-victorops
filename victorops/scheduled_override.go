@@ -132,7 +132,10 @@ func (c *Client) GetScheduledOverride(ctx context.Context, publicID string) (*Sc
 		return nil, details, err
 	}
 
-	return &response.Override, details, nil
+	if response.Override.PublicID != "" {
+		return &response.Override, details, nil
+	}
+	return &response.Schedule, details, nil
 }
 
 // DeleteScheduledOverride deletes a scheduled override by public ID

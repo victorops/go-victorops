@@ -234,7 +234,7 @@ func (c *Client) CreateRotation(ctx context.Context, teamSlug string, payload *R
 		if created.Label == "" {
 			created.Label = resolved.Label
 		}
-	} else if groupID == 0 {
+	} else {
 		return created, details, resolveErr
 	}
 

@@ -67,6 +67,24 @@ func TestGetScheduledOverride(t *testing.T) {
 	}
 }
 
+func TestGetScheduledOverrideFallsBackToSchedule(t *testing.T) {
+	setup()
+	defer teardown()
+
+	testMux.HandleFunc("/api-public/v1/overrides/ov-1", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, "GET")
+		w.Write([]byte(`{"schedule":{"publicId":"ov-1","user":{"username":"johndoe"}}}`))
+	})
+
+	ov, _, err := testClient.GetScheduledOverride(context.Background(), "ov-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ov.PublicID != "ov-1" || ov.GetUsername() != "johndoe" {
+		t.Errorf("unexpected schedule-wrapped override: %#v", ov)
+	}
+}
+
 func TestDeleteScheduledOverride(t *testing.T) {
 	setup()
 	defer teardown()

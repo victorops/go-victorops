@@ -37,6 +37,37 @@ func TestCreateRotationGroup(t *testing.T) {
 	}
 }
 
+func TestCreateRotationGroupReturnsSlugResolutionErrorWhenCreateReturnsID(t *testing.T) {
+	setup()
+	defer teardown()
+
+	listCalls := 0
+	testMux.HandleFunc("/api-public/v1/teams/team-a/rotations", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			listCalls++
+			if listCalls == 1 {
+				w.Write([]byte(`{"rotationGroups":[]}`))
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(`{"message":"lookup failed"}`))
+		case http.MethodPost:
+			w.Write([]byte(`{"id":100,"label":"Primary","teamslug":"team-a"}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
+	})
+
+	resp, _, err := testClient.CreateRotationGroup(context.Background(), "team-a", &RotationGroupCreatePayload{Label: "Primary"})
+	if err == nil {
+		t.Fatal("expected slug-resolution error")
+	}
+	if resp == nil || resp.ID != 100 || resp.Slug != "" {
+		t.Errorf("unexpected partial group: %#v", resp)
+	}
+}
+
 func TestCreateRotationGroupFallsBackToJodaDateAndResolvesID(t *testing.T) {
 	setup()
 	defer teardown()
