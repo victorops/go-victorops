@@ -17,9 +17,15 @@ func TestCreateRotationGroupClientError(t *testing.T) {
 	defer teardown()
 
 	testMux.HandleFunc("/api-public/v1/teams/team-a/rotations", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(t, r, "POST")
-		w.WriteHeader(http.StatusBadRequest)
-		w.Write([]byte(`{"error":"invalid label"}`))
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(`{"rotationGroups":[]}`))
+		case http.MethodPost:
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"error":"invalid label"}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
 	})
 
 	resp, details, err := testClient.CreateRotationGroup(context.Background(), "team-a", &RotationGroupCreatePayload{Label: ""})

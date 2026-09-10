@@ -9,8 +9,10 @@ import (
 
 // RotationGroup represents a rotation group in v1 API
 type RotationGroup struct {
-	Name string `json:"name,omitempty"`
-	Slug string `json:"slug,omitempty"`
+	TeamSlug string `json:"teamSlug,omitempty"`
+	Slug     string `json:"slug,omitempty"`
+	Label    string `json:"label,omitempty"`
+	GroupID  int64  `json:"groupId,omitempty"`
 }
 
 // RotationGroupList represents the response from listing rotation groups (v1)
@@ -18,34 +20,39 @@ type RotationGroupList struct {
 	RotationGroups []RotationGroup `json:"rotationGroups,omitempty"`
 }
 
-// Rotation represents a rotation in v2 API
+// Rotation represents a rotation group returned by the v2 rotations API.
 type Rotation struct {
-	Name            string          `json:"name,omitempty"`
-	Slug            string          `json:"slug,omitempty"`
-	ShiftLength     int             `json:"shiftLength,omitempty"`
-	ShiftLengthUnit string          `json:"shiftLengthUnit,omitempty"`
-	HandoffDay      string          `json:"handoffDay,omitempty"`
-	HandoffTime     string          `json:"handoffTime,omitempty"`
-	TimeZone        string          `json:"timeZone,omitempty"`
-	RestrictionType string          `json:"restrictionType,omitempty"`
-	Shifts          []RotationShift `json:"shifts,omitempty"`
-	Mask1           *RotationMask   `json:"mask1,omitempty"`
-	Mask2           *RotationMask   `json:"mask2,omitempty"`
-	Mask3           *RotationMask   `json:"mask3,omitempty"`
+	GroupID                int64                  `json:"groupId,omitempty"`
+	Label                  string                 `json:"label,omitempty"`
+	TotalMembersInRotation int                    `json:"totalMembersInRotation,omitempty"`
+	Shifts                 []RotationShiftDetails `json:"shifts,omitempty"`
 }
 
-// RotationShift represents a shift within a rotation
-type RotationShift struct {
-	Name    string   `json:"name,omitempty"`
-	Slug    string   `json:"slug,omitempty"`
-	Members []string `json:"members,omitempty"`
+// RotationShiftDetails represents a shift returned by the v2 rotations API.
+type RotationShiftDetails struct {
+	ShiftID      int64                  `json:"shiftId,omitempty"`
+	Label        string                 `json:"label,omitempty"`
+	Duration     int                    `json:"duration,omitempty"`
+	Current      *RotationOnCallPeriod  `json:"current,omitempty"`
+	Next         *RotationOnCallPeriod  `json:"next,omitempty"`
+	Periods      []RotationOnCallPeriod `json:"periods,omitempty"`
+	ShiftMembers []ShiftMember          `json:"shiftMembers,omitempty"`
+	ShiftType    string                 `json:"shifttype,omitempty"`
+	Start        string                 `json:"start,omitempty"`
+	Timezone     string                 `json:"timezone,omitempty"`
+	Mask         *RotationGroupMask     `json:"mask,omitempty"`
+	Mask2        *RotationGroupMask     `json:"mask2,omitempty"`
+	Mask3        *RotationGroupMask     `json:"mask3,omitempty"`
 }
 
-// RotationMask represents restriction masks for rotations
-type RotationMask struct {
-	Days      []string `json:"days,omitempty"`
-	StartTime string   `json:"startTime,omitempty"`
-	EndTime   string   `json:"endTime,omitempty"`
+// RotationOnCallPeriod represents an on-call period returned by the v2 API.
+// apppublic serializes its timestamps as ISO-8601 strings.
+type RotationOnCallPeriod struct {
+	Start      string `json:"start,omitempty"`
+	End        string `json:"end,omitempty"`
+	Username   string `json:"username,omitempty"`
+	IsRoll     bool   `json:"isRoll"`
+	MemberSlug string `json:"memberSlug,omitempty"`
 }
 
 // RotationList represents the response from listing rotations (v2)
@@ -69,6 +76,22 @@ func (c *Client) ListRotationsV1(ctx context.Context, teamSlug string) (*Rotatio
 	return &rotationList, details, nil
 }
 
+// GetRotationGroupByGroupID finds a v1 rotation group by numeric group ID.
+func (c *Client) GetRotationGroupByGroupID(ctx context.Context, teamSlug string, groupID int64) (*RotationGroup, *RequestDetails, error) {
+	groups, details, err := c.ListRotationsV1(ctx, teamSlug)
+	if err != nil {
+		return nil, details, err
+	}
+
+	for i := range groups.RotationGroups {
+		if groups.RotationGroups[i].GroupID == groupID {
+			return &groups.RotationGroups[i], details, nil
+		}
+	}
+
+	return nil, details, nil
+}
+
 // ListRotationsV2 lists all rotations with details for a team (v2 API)
 func (c *Client) ListRotationsV2(ctx context.Context, teamSlug string) (*RotationList, *RequestDetails, error) {
 	details, err := c.makePublicAPICall(ctx, "GET", "v2/team/"+url.PathEscape(teamSlug)+"/rotations", bytes.NewBufferString("{}"), nil)
@@ -83,4 +106,20 @@ func (c *Client) ListRotationsV2(ctx context.Context, teamSlug string) (*Rotatio
 	}
 
 	return &rotationList, details, nil
+}
+
+// GetRotationByGroupID finds a v2 rotation by numeric group ID.
+func (c *Client) GetRotationByGroupID(ctx context.Context, teamSlug string, groupID int64) (*Rotation, *RequestDetails, error) {
+	rotations, details, err := c.ListRotationsV2(ctx, teamSlug)
+	if err != nil {
+		return nil, details, err
+	}
+
+	for i := range rotations.Rotations {
+		if rotations.Rotations[i].GroupID == groupID {
+			return &rotations.Rotations[i], details, nil
+		}
+	}
+
+	return nil, details, nil
 }

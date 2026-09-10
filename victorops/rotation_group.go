@@ -4,9 +4,37 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
+	"strconv"
+	"strings"
+	"time"
 )
+
+// RotationCreateQueryOptions contains the optional paging controls accepted by
+// the rotation-group create endpoint.
+type RotationCreateQueryOptions struct {
+	Skip  *int
+	Count *int
+}
+
+func (o *RotationCreateQueryOptions) queryParams() map[string]string {
+	if o == nil {
+		return nil
+	}
+	params := make(map[string]string, 2)
+	if o.Skip != nil {
+		params["skip"] = strconv.Itoa(*o.Skip)
+	}
+	if o.Count != nil {
+		params["count"] = strconv.Itoa(*o.Count)
+	}
+	if len(params) == 0 {
+		return nil
+	}
+	return params
+}
 
 // RotationGroupCreatePayload is the request body for creating a rotation group.
 type RotationGroupCreatePayload struct {
@@ -33,6 +61,9 @@ type RotationShiftCreatePayload struct {
 	Mask2     *RotationGroupMask `json:"mask2,omitempty"`
 	Mask3     *RotationGroupMask `json:"mask3,omitempty"`
 	Usernames []string           `json:"usernames,omitempty"`
+	// ShiftMembers is retained for gateways that accept the member list under
+	// this legacy field when the Joda-date request format is required.
+	ShiftMembers []string `json:"shiftMembers,omitempty"`
 }
 
 // RotationGroupMask represents a restriction mask (day selection + time ranges) for a shift.
@@ -71,6 +102,9 @@ type RotationGroupResponse struct {
 	ID       int64                   `json:"id,omitempty"`
 	Label    string                  `json:"label,omitempty"`
 	Shifts   []RotationShiftResource `json:"shifts,omitempty"`
+	// Slug is resolved from the v1 list endpoint because create responses do not
+	// consistently include it.
+	Slug string `json:"-"`
 }
 
 // RotationShiftResource is returned by shift create/get/update.
@@ -151,28 +185,182 @@ func rotationsBase(teamSlug string) string {
 	return "v1/teams/" + url.PathEscape(teamSlug) + "/rotations"
 }
 
-// CreateRotationGroup creates a new rotation group under a team, optionally with shifts.
+// CreateRotationGroup creates a new rotation group under a team, optionally
+// with shifts. It preserves the established create workflow while exposing the
+// simpler method used by callers that do not need paging query options.
 func (c *Client) CreateRotationGroup(ctx context.Context, teamSlug string, payload *RotationGroupCreatePayload) (*RotationGroupResponse, *RequestDetails, error) {
-	body, err := json.Marshal(payload)
+	return c.CreateRotation(ctx, teamSlug, payload, nil)
+}
+
+// CreateRotation creates a rotation group and resolves the numeric group ID and
+// slug needed by stateful consumers. Some public API gateways accept epoch
+// milliseconds for shift start while others require an ISO-8601 Joda date; a
+// validation failure for the former is retried with the latter representation.
+func (c *Client) CreateRotation(ctx context.Context, teamSlug string, payload *RotationGroupCreatePayload, options *RotationCreateQueryOptions) (*RotationGroupResponse, *RequestDetails, error) {
+	if payload == nil {
+		return nil, nil, fmt.Errorf("rotation create payload cannot be nil")
+	}
+
+	before, beforeDetails, err := c.ListRotationsV1(ctx, teamSlug)
+	if err != nil {
+		return nil, beforeDetails, err
+	}
+	beforeIDs := make(map[int64]struct{}, len(before.RotationGroups))
+	for _, group := range before.RotationGroups {
+		beforeIDs[group.GroupID] = struct{}{}
+	}
+
+	created, details, err := c.createRotationRequest(ctx, teamSlug, payload, options.queryParams(), false)
+	if isJodaDateValidationError(details, err) {
+		created, details, err = c.createRotationRequest(ctx, teamSlug, payload, options.queryParams(), true)
+	}
+	if err != nil {
+		return created, details, err
+	}
+
+	groupID := created.ID
+	if groupID == 0 && len(created.Shifts) > 0 {
+		groupID = created.Shifts[0].GroupID
+	}
+
+	resolveLabel := created.Label
+	if resolveLabel == "" {
+		resolveLabel = payload.Label
+	}
+	resolved, resolveErr := c.resolveCreatedRotation(ctx, teamSlug, groupID, resolveLabel, beforeIDs)
+	if resolveErr == nil {
+		created.ID = resolved.GroupID
+		created.Slug = resolved.Slug
+		if created.Label == "" {
+			created.Label = resolved.Label
+		}
+	} else if groupID == 0 {
+		return created, details, resolveErr
+	}
+
+	return created, details, nil
+}
+
+func (c *Client) createRotationRequest(ctx context.Context, teamSlug string, payload *RotationGroupCreatePayload, queryParams map[string]string, jodaDate bool) (*RotationGroupResponse, *RequestDetails, error) {
+	body, err := marshalRotationGroupCreatePayload(payload, jodaDate)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	details, err := c.makePublicAPICall(ctx, "POST", rotationsBase(teamSlug), bytes.NewBuffer(body), nil)
+	details, err := c.makePublicAPICall(ctx, "POST", rotationsBase(teamSlug), bytes.NewReader(body), queryParams)
 	if err != nil {
 		return nil, details, err
 	}
 
-	var response RotationGroupResponse
-	if err := json.Unmarshal([]byte(details.ResponseBody), &response); err != nil {
-		return nil, details, err
+	response := &RotationGroupResponse{}
+	if strings.TrimSpace(details.ResponseBody) != "" {
+		if err := json.Unmarshal([]byte(details.ResponseBody), response); err != nil {
+			return nil, details, err
+		}
+	}
+	return response, details, nil
+}
+
+func marshalRotationGroupCreatePayload(payload *RotationGroupCreatePayload, jodaDate bool) ([]byte, error) {
+	if !jodaDate {
+		return json.Marshal(payload)
 	}
 
-	return &response, details, nil
+	result := map[string]interface{}{"label": payload.Label}
+	if len(payload.Shifts) > 0 {
+		shifts := make([]map[string]interface{}, len(payload.Shifts))
+		for i := range payload.Shifts {
+			shifts[i] = rotationShiftPayloadMap(&payload.Shifts[i], true)
+		}
+		result["shifts"] = shifts
+	}
+	return json.Marshal(result)
+}
+
+func rotationShiftPayloadMap(payload *RotationShiftCreatePayload, jodaDate bool) map[string]interface{} {
+	shift := map[string]interface{}{
+		"label":     payload.Label,
+		"timezone":  payload.Timezone,
+		"duration":  payload.Duration,
+		"shifttype": payload.ShiftType,
+	}
+	if payload.Start != 0 {
+		if jodaDate {
+			shift["start"] = time.UnixMilli(payload.Start).UTC().Format("2006-01-02T15:04:05.000Z")
+		} else {
+			shift["start"] = payload.Start
+		}
+	}
+	if payload.Mask != nil {
+		shift["mask"] = payload.Mask
+	}
+	if payload.Mask2 != nil {
+		shift["mask2"] = payload.Mask2
+	}
+	if payload.Mask3 != nil {
+		shift["mask3"] = payload.Mask3
+	}
+	if len(payload.Usernames) > 0 {
+		shift["usernames"] = payload.Usernames
+		shift["shiftMembers"] = payload.Usernames
+	}
+	if len(payload.ShiftMembers) > 0 {
+		shift["shiftMembers"] = payload.ShiftMembers
+	}
+	return shift
+}
+
+func isJodaDateValidationError(details *RequestDetails, err error) bool {
+	if details == nil || !strings.Contains(details.ResponseBody, "error.expected.jodadate.format") {
+		return false
+	}
+	var apiErr *APIError
+	return details.StatusCode == 400 && (err == nil || errors.As(err, &apiErr))
+}
+
+func (c *Client) resolveCreatedRotation(ctx context.Context, teamSlug string, groupID int64, label string, beforeIDs map[int64]struct{}) (*RotationGroup, error) {
+	const maxAttempts = 8
+	const delay = 500 * time.Millisecond
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		groups, _, err := c.ListRotationsV1(ctx, teamSlug)
+		if err != nil {
+			return nil, err
+		}
+
+		for i := range groups.RotationGroups {
+			group := &groups.RotationGroups[i]
+			if groupID != 0 && group.GroupID == groupID && group.Slug != "" {
+				return group, nil
+			}
+		}
+
+		var candidates []*RotationGroup
+		for i := range groups.RotationGroups {
+			group := &groups.RotationGroups[i]
+			_, existed := beforeIDs[group.GroupID]
+			if !existed && (label == "" || group.Label == label) {
+				candidates = append(candidates, group)
+			}
+		}
+		if len(candidates) == 1 && candidates[0].Slug != "" {
+			return candidates[0], nil
+		}
+
+		if attempt < maxAttempts-1 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("rotation was created but its group id/slug could not be resolved for team %s", teamSlug)
 }
 
 // GetRotationGroup gets a single rotation group by ID.
-func (c *Client) GetRotationGroup(ctx context.Context, teamSlug string, groupID int) (*RotationGroupResponse, *RequestDetails, error) {
+func (c *Client) GetRotationGroup(ctx context.Context, teamSlug string, groupID int64) (*RotationGroupResponse, *RequestDetails, error) {
 	endpoint := fmt.Sprintf("%s/%d", rotationsBase(teamSlug), groupID)
 	details, err := c.makePublicAPICall(ctx, "GET", endpoint, bytes.NewBufferString("{}"), nil)
 	if err != nil {
@@ -188,7 +376,7 @@ func (c *Client) GetRotationGroup(ctx context.Context, teamSlug string, groupID 
 }
 
 // UpdateRotationGroup updates a rotation group's label.
-func (c *Client) UpdateRotationGroup(ctx context.Context, teamSlug string, groupID int, payload *RotationGroupUpdatePayload) (*RotationGroupResponse, *RequestDetails, error) {
+func (c *Client) UpdateRotationGroup(ctx context.Context, teamSlug string, groupID int64, payload *RotationGroupUpdatePayload) (*RotationGroupResponse, *RequestDetails, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err
@@ -209,14 +397,19 @@ func (c *Client) UpdateRotationGroup(ctx context.Context, teamSlug string, group
 }
 
 // DeleteRotationGroup deletes a rotation group by ID.
-func (c *Client) DeleteRotationGroup(ctx context.Context, teamSlug string, groupID int) (*RequestDetails, error) {
+func (c *Client) DeleteRotationGroup(ctx context.Context, teamSlug string, groupID int64) (*RequestDetails, error) {
 	endpoint := fmt.Sprintf("%s/%d", rotationsBase(teamSlug), groupID)
 	details, err := c.makePublicAPICall(ctx, "DELETE", endpoint, bytes.NewBufferString("{}"), nil)
 	return details, err
 }
 
+// DeleteRotation is the established numeric-ID deletion entry point.
+func (c *Client) DeleteRotation(ctx context.Context, teamSlug string, groupID int64) (*RequestDetails, error) {
+	return c.DeleteRotationGroup(ctx, teamSlug, groupID)
+}
+
 // CreateRotationShift adds a new shift to an existing rotation group.
-func (c *Client) CreateRotationShift(ctx context.Context, teamSlug string, groupID int, payload *RotationShiftCreatePayload) (*RotationShiftResource, *RequestDetails, error) {
+func (c *Client) CreateRotationShift(ctx context.Context, teamSlug string, groupID int64, payload *RotationShiftCreatePayload) (*RotationShiftResource, *RequestDetails, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err
@@ -224,6 +417,13 @@ func (c *Client) CreateRotationShift(ctx context.Context, teamSlug string, group
 
 	endpoint := fmt.Sprintf("%s/%d", rotationsBase(teamSlug), groupID)
 	details, err := c.makePublicAPICall(ctx, "POST", endpoint, bytes.NewBuffer(body), nil)
+	if isJodaDateValidationError(details, err) {
+		body, marshalErr := json.Marshal(rotationShiftPayloadMap(payload, true))
+		if marshalErr != nil {
+			return nil, nil, marshalErr
+		}
+		details, err = c.makePublicAPICall(ctx, "POST", endpoint, bytes.NewBuffer(body), nil)
+	}
 	if err != nil {
 		return nil, details, err
 	}
@@ -237,7 +437,7 @@ func (c *Client) CreateRotationShift(ctx context.Context, teamSlug string, group
 }
 
 // GetRotationShift gets a single shift within a rotation group.
-func (c *Client) GetRotationShift(ctx context.Context, teamSlug string, groupID int, shiftID int) (*RotationShiftResource, *RequestDetails, error) {
+func (c *Client) GetRotationShift(ctx context.Context, teamSlug string, groupID int64, shiftID int64) (*RotationShiftResource, *RequestDetails, error) {
 	endpoint := fmt.Sprintf("%s/%d/%d", rotationsBase(teamSlug), groupID, shiftID)
 	details, err := c.makePublicAPICall(ctx, "GET", endpoint, bytes.NewBufferString("{}"), nil)
 	if err != nil {
@@ -253,7 +453,7 @@ func (c *Client) GetRotationShift(ctx context.Context, teamSlug string, groupID 
 }
 
 // UpdateRotationShift fully replaces an existing shift within a rotation group.
-func (c *Client) UpdateRotationShift(ctx context.Context, teamSlug string, groupID int, shiftID int, payload *RotationShiftCreatePayload) (*RotationShiftResource, *RequestDetails, error) {
+func (c *Client) UpdateRotationShift(ctx context.Context, teamSlug string, groupID int64, shiftID int64, payload *RotationShiftCreatePayload) (*RotationShiftResource, *RequestDetails, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err
@@ -261,6 +461,13 @@ func (c *Client) UpdateRotationShift(ctx context.Context, teamSlug string, group
 
 	endpoint := fmt.Sprintf("%s/%d/%d", rotationsBase(teamSlug), groupID, shiftID)
 	details, err := c.makePublicAPICall(ctx, "PUT", endpoint, bytes.NewBuffer(body), nil)
+	if isJodaDateValidationError(details, err) {
+		body, marshalErr := json.Marshal(rotationShiftPayloadMap(payload, true))
+		if marshalErr != nil {
+			return nil, nil, marshalErr
+		}
+		details, err = c.makePublicAPICall(ctx, "PUT", endpoint, bytes.NewBuffer(body), nil)
+	}
 	if err != nil {
 		return nil, details, err
 	}
@@ -274,14 +481,14 @@ func (c *Client) UpdateRotationShift(ctx context.Context, teamSlug string, group
 }
 
 // DeleteRotationShift deletes a shift within a rotation group.
-func (c *Client) DeleteRotationShift(ctx context.Context, teamSlug string, groupID int, shiftID int) (*RequestDetails, error) {
+func (c *Client) DeleteRotationShift(ctx context.Context, teamSlug string, groupID int64, shiftID int64) (*RequestDetails, error) {
 	endpoint := fmt.Sprintf("%s/%d/%d", rotationsBase(teamSlug), groupID, shiftID)
 	details, err := c.makePublicAPICall(ctx, "DELETE", endpoint, bytes.NewBufferString("{}"), nil)
 	return details, err
 }
 
 // AddRotationShiftMember adds a member to a rotation shift.
-func (c *Client) AddRotationShiftMember(ctx context.Context, teamSlug string, groupID int, shiftID int, payload *RotationMemberAddPayload) (*RequestDetails, error) {
+func (c *Client) AddRotationShiftMember(ctx context.Context, teamSlug string, groupID int64, shiftID int64, payload *RotationMemberAddPayload) (*RequestDetails, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -293,7 +500,7 @@ func (c *Client) AddRotationShiftMember(ctx context.Context, teamSlug string, gr
 }
 
 // RemoveRotationShiftMember removes a member from a rotation shift, optionally naming a replacement.
-func (c *Client) RemoveRotationShiftMember(ctx context.Context, teamSlug string, groupID int, shiftID int, payload *RotationMemberRemovePayload) (*RequestDetails, error) {
+func (c *Client) RemoveRotationShiftMember(ctx context.Context, teamSlug string, groupID int64, shiftID int64, payload *RotationMemberRemovePayload) (*RequestDetails, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -305,7 +512,7 @@ func (c *Client) RemoveRotationShiftMember(ctx context.Context, teamSlug string,
 }
 
 // UpdateRotationShiftMemberPosition updates a member's position within a rotation shift.
-func (c *Client) UpdateRotationShiftMemberPosition(ctx context.Context, teamSlug string, groupID int, shiftID int, payload *RotationMemberPositionPayload) (*RequestDetails, error) {
+func (c *Client) UpdateRotationShiftMemberPosition(ctx context.Context, teamSlug string, groupID int64, shiftID int64, payload *RotationMemberPositionPayload) (*RequestDetails, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -317,7 +524,7 @@ func (c *Client) UpdateRotationShiftMemberPosition(ctx context.Context, teamSlug
 }
 
 // GetScheduledShiftUser gets the currently scheduled user for a rotation shift.
-func (c *Client) GetScheduledShiftUser(ctx context.Context, teamSlug string, groupID int, shiftID int) (*ScheduledShiftResponse, *RequestDetails, error) {
+func (c *Client) GetScheduledShiftUser(ctx context.Context, teamSlug string, groupID int64, shiftID int64) (*ScheduledShiftResponse, *RequestDetails, error) {
 	endpoint := fmt.Sprintf("%s/%d/%d/scheduled", rotationsBase(teamSlug), groupID, shiftID)
 	details, err := c.makePublicAPICall(ctx, "GET", endpoint, bytes.NewBufferString("{}"), nil)
 	if err != nil {
@@ -333,7 +540,7 @@ func (c *Client) GetScheduledShiftUser(ctx context.Context, teamSlug string, gro
 }
 
 // SetScheduledShiftUser sets the scheduled user for a rotation shift.
-func (c *Client) SetScheduledShiftUser(ctx context.Context, teamSlug string, groupID int, shiftID int, payload *SetScheduledShiftPayload) (*ScheduledShiftResponse, *RequestDetails, error) {
+func (c *Client) SetScheduledShiftUser(ctx context.Context, teamSlug string, groupID int64, shiftID int64, payload *SetScheduledShiftPayload) (*ScheduledShiftResponse, *RequestDetails, error) {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err

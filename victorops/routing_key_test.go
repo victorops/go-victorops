@@ -38,7 +38,7 @@ func TestGetAllRoutingKeys(t *testing.T) {
 		testMethod(t, r, "GET")
 		w.Write([]byte(`{
 			"routingKeys": [
-				{ "routingKey": "test-key", "targets": [ { "policySlug": "pol-abcd" } ] },
+				{ "routingKey": "test-key", "targets": [ { "policySlug": "pol-abcd" } ], "isDefault": true, "isMultiResponder": true },
 				{ "routingKey": "other-key", "targets": [ { "policySlug": "pol-efgh" } ] }
 			]
 		}`))
@@ -51,7 +51,7 @@ func TestGetAllRoutingKeys(t *testing.T) {
 	if len(list.RoutingKeys) != 2 {
 		t.Fatalf("expected 2 routing keys, got %d", len(list.RoutingKeys))
 	}
-	if list.RoutingKeys[0].Targets[0].PolicySlug != "pol-abcd" {
+	if list.RoutingKeys[0].Targets[0].PolicySlug != "pol-abcd" || !list.RoutingKeys[0].IsDefault || !list.RoutingKeys[0].IsMultiResponder {
 		t.Errorf("unexpected first key targets: %#v", list.RoutingKeys[0])
 	}
 }

@@ -2,6 +2,7 @@ package victorops
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 )
@@ -10,17 +11,92 @@ func TestCreateRotationGroup(t *testing.T) {
 	setup()
 	defer teardown()
 
+	listCalls := 0
 	testMux.HandleFunc("/api-public/v1/teams/team-a/rotations", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(t, r, "POST")
-		w.Write([]byte(`{"id":100,"label":"Primary","teamslug":"team-a"}`))
+		switch r.Method {
+		case http.MethodGet:
+			listCalls++
+			if listCalls == 1 {
+				w.Write([]byte(`{"rotationGroups":[]}`))
+				return
+			}
+			w.Write([]byte(`{"rotationGroups":[{"teamSlug":"team-a","slug":"rtg-1","label":"Primary","groupId":100}]}`))
+		case http.MethodPost:
+			w.Write([]byte(`{"id":100,"label":"Primary","teamslug":"team-a"}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
 	})
 
 	resp, _, err := testClient.CreateRotationGroup(context.Background(), "team-a", &RotationGroupCreatePayload{Label: "Primary"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.ID != 100 || resp.Label != "Primary" {
+	if resp.ID != 100 || resp.Label != "Primary" || resp.Slug != "rtg-1" {
 		t.Errorf("unexpected group: %#v", resp)
+	}
+}
+
+func TestCreateRotationGroupFallsBackToJodaDateAndResolvesID(t *testing.T) {
+	setup()
+	defer teardown()
+
+	listCalls := 0
+	postCalls := 0
+	testMux.HandleFunc("/api-public/v1/teams/team-a/rotations", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			listCalls++
+			if listCalls == 1 {
+				w.Write([]byte(`{"rotationGroups":[]}`))
+				return
+			}
+			w.Write([]byte(`{"rotationGroups":[{"teamSlug":"team-a","slug":"rtg-2","label":"Fallback","groupId":101}]}`))
+		case http.MethodPost:
+			postCalls++
+			var body struct {
+				Shifts []map[string]interface{} `json:"shifts"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			if postCalls == 1 {
+				if _, ok := body.Shifts[0]["start"].(float64); !ok {
+					t.Errorf("first request should use epoch milliseconds: %#v", body.Shifts[0]["start"])
+				}
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte(`{"error":"error.expected.jodadate.format"}`))
+				return
+			}
+			if got, ok := body.Shifts[0]["start"].(string); !ok || got != "2026-09-10T00:00:00.000Z" {
+				t.Errorf("fallback should use Joda-compatible timestamp, got %#v", body.Shifts[0]["start"])
+			}
+			if _, ok := body.Shifts[0]["shiftMembers"]; !ok {
+				t.Errorf("fallback should preserve shift members: %#v", body.Shifts[0])
+			}
+			w.Write([]byte(`{"label":"Fallback","shifts":[{"group_id":101,"rot_id":201,"shiftMembers":[{"slug":"mem-1","username":"jane"}]}]}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
+	})
+
+	start := int64(1788998400000) // 2026-09-10T00:00:00.000Z
+	resp, _, err := testClient.CreateRotationGroup(context.Background(), "team-a", &RotationGroupCreatePayload{
+		Label: "Fallback",
+		Shifts: []RotationShiftCreatePayload{{
+			Label:        "Primary",
+			Timezone:     "UTC",
+			Start:        start,
+			Duration:     7,
+			ShiftType:    "std",
+			ShiftMembers: []string{"jane"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if postCalls != 2 || resp.ID != 101 || resp.Slug != "rtg-2" || len(resp.Shifts) != 1 || len(resp.Shifts[0].ShiftMembers) != 1 {
+		t.Errorf("unexpected fallback result: calls=%d response=%#v", postCalls, resp)
 	}
 }
 

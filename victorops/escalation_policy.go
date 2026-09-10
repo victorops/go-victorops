@@ -33,6 +33,14 @@ type EscalationPolicy struct {
 	ID                         string                  `json:"slug"`
 }
 
+// EscalationPolicyUpdatePayload is the mutable portion accepted by the public
+// escalation-policy update endpoint. Name, teamSlug, and slug are not part of
+// the update contract.
+type EscalationPolicyUpdatePayload struct {
+	IgnoreCustomPagingPolicies bool                    `json:"ignoreCustomPagingPolicies"`
+	Steps                      []EscalationPolicySteps `json:"steps"`
+}
+
 // EscalationPolicyListDetail is a struct to hold the details of a team or policy returned in
 // the list all escalation policies API call
 type EscalationPolicyListDetail struct {
@@ -85,8 +93,8 @@ func (c *Client) CreateEscalationPolicy(ctx context.Context, escalationPolicy *E
 }
 
 // UpdateEscalationPolicy updates an existing escalation policy by its slug/ID.
-func (c *Client) UpdateEscalationPolicy(ctx context.Context, escalationPolicyID string, escalationPolicy *EscalationPolicy) (*EscalationPolicy, *RequestDetails, error) {
-	jsonEp, err := json.Marshal(escalationPolicy)
+func (c *Client) UpdateEscalationPolicy(ctx context.Context, escalationPolicyID string, payload *EscalationPolicyUpdatePayload) (*EscalationPolicy, *RequestDetails, error) {
+	jsonEp, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err
 	}

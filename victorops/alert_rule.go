@@ -40,7 +40,7 @@ type AlertRulePayload struct {
 	StopFlag        bool                     `json:"stopFlag"`
 	Notes           string                   `json:"notes,omitempty"`
 	Rank            int                      `json:"rank"` // required by the API; always sent (0 = highest priority)
-	RoutingKey      string                   `json:"routingKey,omitempty"`
+	RoutingKey      string                   `json:"routeKey,omitempty"`
 	Annotations     []AlertAnnotationPayload `json:"annotations"`
 }
 
@@ -57,9 +57,11 @@ type DeleteAlertRuleResponse struct {
 	ID int64 `json:"id,omitempty"`
 }
 
-// ListAlertRules lists all alert rules for the organization
+// ListAlertRules lists all alert rules for the organization, including rules
+// scoped to individual routing keys. Without routing_key=*, the public API only
+// returns global rules.
 func (c *Client) ListAlertRules(ctx context.Context) ([]AlertRule, *RequestDetails, error) {
-	details, err := c.makePublicAPICall(ctx, "GET", "v1/alertRules", bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/alertRules", bytes.NewBufferString("{}"), map[string]string{"routing_key": "*"})
 	if err != nil {
 		return nil, details, err
 	}
@@ -71,6 +73,16 @@ func (c *Client) ListAlertRules(ctx context.Context) ([]AlertRule, *RequestDetai
 	}
 
 	return rules, details, nil
+}
+
+// GetAlertRuleByUpdate retrieves an alert rule by issuing a PUT with the
+// supplied current payload. The public API has no GET-by-ID endpoint, so this
+// is retained as a compatibility fallback for environments where the list
+// endpoint does not return a routing-key-scoped rule.
+//
+// This call is not side-effect-free: the server overwrites the rule with rule.
+func (c *Client) GetAlertRuleByUpdate(ctx context.Context, ruleID string, rule *AlertRulePayload) (*AlertRule, *RequestDetails, error) {
+	return c.UpdateAlertRule(ctx, ruleID, rule)
 }
 
 // CreateAlertRule creates a new alert rule

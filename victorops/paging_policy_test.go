@@ -57,7 +57,24 @@ func TestGetTimeoutTypes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.TimeoutTypes) != 1 || resp.TimeoutTypes[0].Type != "5" {
+	if len(resp.TimeoutTypes) != 1 || resp.TimeoutTypes[0].Type != 5 {
+		t.Errorf("unexpected timeout types: %#v", resp)
+	}
+}
+
+func TestGetTimeoutTypesAcceptsDocumentedInteger(t *testing.T) {
+	setup()
+	defer teardown()
+
+	testMux.HandleFunc("/api-public/v1/policies/types/timeouts", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"timeoutTypes":[{"type":10,"description":"10 minutes"}]}`))
+	})
+
+	resp, _, err := testClient.GetTimeoutTypes(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.TimeoutTypes) != 1 || resp.TimeoutTypes[0].Type != 10 {
 		t.Errorf("unexpected timeout types: %#v", resp)
 	}
 }
@@ -104,6 +121,13 @@ func TestCreatePagingPolicyStep(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v1/profile/johndoe/policies", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "POST")
+		var sent AddStepPayload
+		if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if sent.Timeout != 10 || sent.Rules == nil || len(sent.Rules) != 0 {
+			t.Errorf("unexpected add-step payload: %#v", sent)
+		}
 		w.Write([]byte(`{"step":{"index":2,"timeout":10}}`))
 	})
 
@@ -142,8 +166,21 @@ func TestUpdatePagingPolicyStep(t *testing.T) {
 	defer teardown()
 
 	testMux.HandleFunc("/api-public/v1/profile/johndoe/policies/2", func(w http.ResponseWriter, r *http.Request) {
-		testMethod(t, r, "PUT")
-		w.Write([]byte(`{"step":{"index":2,"timeout":15}}`))
+		switch r.Method {
+		case http.MethodGet:
+			w.Write([]byte(`{"step":{"index":2,"timeout":10,"rules":[{"index":0,"type":"email","contact":{"id":42,"type":"email"}}]}}`))
+		case http.MethodPut:
+			var sent AddStepPayload
+			if err := json.NewDecoder(r.Body).Decode(&sent); err != nil {
+				t.Fatalf("decode request body: %v", err)
+			}
+			if sent.Timeout != 15 || len(sent.Rules) != 1 || sent.Rules[0].Type != "email" || sent.Rules[0].Contact.ID != 42 {
+				t.Errorf("unexpected update-step payload: %#v", sent)
+			}
+			w.Write([]byte(`{"step":{"index":2,"timeout":15}}`))
+		default:
+			t.Errorf("unexpected method %s", r.Method)
+		}
 	})
 
 	resp, _, err := testClient.UpdatePagingPolicyStep(context.Background(), "johndoe", 2, 15)

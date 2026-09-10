@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 )
 
 // PagingRuleContact identifies the contact method used by a paging policy rule.
@@ -83,12 +84,44 @@ type ContactTypesResponse struct {
 	SelfURL      string              `json:"_selfUrl,omitempty"`
 }
 
-// TimeoutType represents a timeout type available for paging policies. The API
-// returns the timeout "type" as a string (e.g. "5"), matching the notification
-// and contact type endpoints.
+// TimeoutType represents a timeout type available for paging policies. The
+// published schema defines Type as an integer, while some deployed apppublic
+// versions serialize it as a numeric string; UnmarshalJSON accepts both.
 type TimeoutType struct {
 	Description string `json:"description,omitempty"`
-	Type        string `json:"type,omitempty"`
+	Type        int    `json:"type,omitempty"`
+}
+
+// UnmarshalJSON accepts both the documented numeric representation and the
+// numeric-string representation emitted by existing public API deployments.
+func (t *TimeoutType) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Description string          `json:"description"`
+		Type        json.RawMessage `json:"type"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	t.Description = raw.Description
+	if len(raw.Type) == 0 || string(raw.Type) == "null" {
+		t.Type = 0
+		return nil
+	}
+	if err := json.Unmarshal(raw.Type, &t.Type); err == nil {
+		return nil
+	}
+
+	var value string
+	if err := json.Unmarshal(raw.Type, &value); err != nil {
+		return fmt.Errorf("invalid paging timeout type %s", raw.Type)
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("invalid paging timeout type %q: %w", value, err)
+	}
+	t.Type = parsed
+	return nil
 }
 
 // TimeoutTypesResponse represents the response from getting timeout types
@@ -99,7 +132,8 @@ type TimeoutTypesResponse struct {
 
 // AddStepPayload represents the payload for adding a paging policy step
 type AddStepPayload struct {
-	Timeout int `json:"timeout,omitempty"`
+	Timeout int              `json:"timeout"`
+	Rules   []AddRulePayload `json:"rules"`
 }
 
 // AddRulePayload represents the payload for adding/updating a rule on a step.
@@ -225,8 +259,14 @@ func (c *Client) GetUserPagingPoliciesV2(ctx context.Context, username string) (
 
 // CreatePagingPolicyStep creates a new paging policy step for a user
 func (c *Client) CreatePagingPolicyStep(ctx context.Context, username string, timeout int) (*PagingPolicyStepResponse, *RequestDetails, error) {
-	payload := AddStepPayload{Timeout: timeout}
-	jsonPayload, err := json.Marshal(payload)
+	payload := AddStepPayload{Timeout: timeout, Rules: []AddRulePayload{}}
+	return c.CreatePagingPolicyStepWithPayload(ctx, username, &payload)
+}
+
+// CreatePagingPolicyStepWithPayload creates a paging policy step with its
+// complete public API payload, including any initial notification rules.
+func (c *Client) CreatePagingPolicyStepWithPayload(ctx context.Context, username string, payload *AddStepPayload) (*PagingPolicyStepResponse, *RequestDetails, error) {
+	jsonPayload, err := marshalPagingPolicyStepPayload(payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -263,8 +303,22 @@ func (c *Client) GetPagingPolicyStep(ctx context.Context, username string, step 
 
 // UpdatePagingPolicyStep updates a paging policy step
 func (c *Client) UpdatePagingPolicyStep(ctx context.Context, username string, step int, timeout int) (*PagingPolicyStepResponse, *RequestDetails, error) {
-	payload := AddStepPayload{Timeout: timeout}
-	jsonPayload, err := json.Marshal(payload)
+	current, details, err := c.GetPagingPolicyStep(ctx, username, step)
+	if err != nil {
+		return nil, details, err
+	}
+	rules := make([]AddRulePayload, len(current.Step.Rules))
+	for i, rule := range current.Step.Rules {
+		rules[i] = AddRulePayload{Contact: rule.Contact, Type: rule.Type}
+	}
+	payload := AddStepPayload{Timeout: timeout, Rules: rules}
+	return c.UpdatePagingPolicyStepWithPayload(ctx, username, step, &payload)
+}
+
+// UpdatePagingPolicyStepWithPayload replaces a paging policy step with the
+// complete payload required by the public API.
+func (c *Client) UpdatePagingPolicyStepWithPayload(ctx context.Context, username string, step int, payload *AddStepPayload) (*PagingPolicyStepResponse, *RequestDetails, error) {
+	jsonPayload, err := marshalPagingPolicyStepPayload(payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -281,6 +335,17 @@ func (c *Client) UpdatePagingPolicyStep(ctx context.Context, username string, st
 	}
 
 	return &response, details, nil
+}
+
+func marshalPagingPolicyStepPayload(payload *AddStepPayload) ([]byte, error) {
+	if payload == nil {
+		return nil, fmt.Errorf("paging policy step payload cannot be nil")
+	}
+	normalized := *payload
+	if normalized.Rules == nil {
+		normalized.Rules = []AddRulePayload{}
+	}
+	return json.Marshal(&normalized)
 }
 
 // CreatePagingPolicyRule creates a new rule in a paging policy step. contact is

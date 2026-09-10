@@ -2,6 +2,7 @@ package victorops
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 )
@@ -108,6 +109,13 @@ func TestUpdateEscalationPolicy(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v1/policies/pol-abcd", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "PUT")
+		var payload map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode update payload: %v", err)
+		}
+		if len(payload) != 2 || payload["steps"] == nil || payload["ignoreCustomPagingPolicies"] == nil {
+			t.Errorf("update payload must contain only steps and ignoreCustomPagingPolicies: %#v", payload)
+		}
 		w.Write([]byte(`{
 			"name": "Renamed Severity",
 			"teamSlug": "team-abcd",
@@ -116,9 +124,9 @@ func TestUpdateEscalationPolicy(t *testing.T) {
 		}`))
 	})
 
-	policy, _, err := testClient.UpdateEscalationPolicy(context.Background(), "pol-abcd", &EscalationPolicy{
-		Name:   "Renamed Severity",
-		TeamID: "team-abcd",
+	policy, _, err := testClient.UpdateEscalationPolicy(context.Background(), "pol-abcd", &EscalationPolicyUpdatePayload{
+		IgnoreCustomPagingPolicies: true,
+		Steps:                      []EscalationPolicySteps{},
 	})
 	if err != nil {
 		t.Fatal(err)

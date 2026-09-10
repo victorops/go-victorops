@@ -170,7 +170,7 @@ if err != nil {
 
 ### Escalation Policies
 - `CreateEscalationPolicy` – create an escalation policy
-- `UpdateEscalationPolicy` – update an escalation policy
+- `UpdateEscalationPolicy` – replace a policy's mutable steps and paging-policy flag
 - `GetEscalationPolicy` – get a policy by ID
 - `GetAllEscalationPolicies` – list all policies
 - `DeleteEscalationPolicy` – delete a policy
@@ -218,9 +218,10 @@ if err != nil {
 - `EndMaintenanceMode` – end maintenance mode
 
 ### Alert Rules
-- `ListAlertRules` – list all alert rules
+- `ListAlertRules` – list global and routing-key-scoped alert rules
 - `CreateAlertRule` – create an alert rule
 - `GetAlertRule` – get an alert rule by ID
+- `GetAlertRuleByUpdate` – compatibility fallback when a scoped rule is omitted from listing (uses PUT and is not side-effect-free)
 - `UpdateAlertRule` – update an alert rule
 - `DeleteAlertRule` – delete an alert rule
 
@@ -229,13 +230,17 @@ if err != nil {
 
 ### Rotations (read-only)
 - `ListRotationsV1` – list rotation groups for a team (v1)
+- `GetRotationGroupByGroupID` – find a v1 rotation group by numeric ID
 - `ListRotationsV2` – list rotations with details for a team (v2)
+- `GetRotationByGroupID` – find a v2 rotation by numeric ID
 
 ### Rotation Groups
 - `CreateRotationGroup` – create a rotation group (optionally with shifts)
+- `CreateRotation` – create a group with optional paging controls and resolve its numeric ID and slug
 - `GetRotationGroup` – get a rotation group by ID
 - `UpdateRotationGroup` – rename a rotation group
 - `DeleteRotationGroup` – delete a rotation group
+- `DeleteRotation` – delete a rotation group using the established int64-ID API
 - `CreateRotationShift` – add a shift to a group
 - `GetRotationShift` – get a shift
 - `UpdateRotationShift` – replace a shift
@@ -254,8 +259,10 @@ if err != nil {
 - `GetUserPagingPolicies` – get a user's paging policy steps (v1)
 - `GetUserPagingPoliciesV2` – get a user's paging policies (v2)
 - `CreatePagingPolicyStep` – create a step
+- `CreatePagingPolicyStepWithPayload` – create a step with initial rules
 - `GetPagingPolicyStep` – get a step
 - `UpdatePagingPolicyStep` – update a step
+- `UpdatePagingPolicyStepWithPayload` – replace a step using its complete timeout-and-rules payload
 - `CreatePagingPolicyRule` – create a rule in a step
 - `GetPagingPolicyRule` – get a rule
 - `UpdatePagingPolicyRule` – update a rule

@@ -377,3 +377,83 @@ func TestEngineConfigGetters(t *testing.T) {
 		t.Errorf("expected a non-nil http client")
 	}
 }
+
+func TestEngineNormalizesNegativeRetries(t *testing.T) {
+	var calls int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewClientWithArgs("id", "key", server.URL, ClientArgs{
+		RateLimit:   1000,
+		RetryConfig: &RetryConfig{MaxRetries: -1},
+	})
+	details, err := client.makePublicAPICall(context.Background(), http.MethodGet, "v1/incidents", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("expected one initial request, got %d", got)
+	}
+	if client.GetRetryConfig().MaxRetries != 0 || details.RetryCount != 0 {
+		t.Errorf("negative retries were not normalized: config=%d details=%d", client.GetRetryConfig().MaxRetries, details.RetryCount)
+	}
+}
+
+type alwaysErrorTransport struct{ err error }
+
+func (t alwaysErrorTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, t.err
+}
+
+func TestEngineClassifiesEveryTransportErrorAsNetwork(t *testing.T) {
+	client := NewConfigurableClient("id", "key", "http://example.invalid", http.Client{
+		Transport: alwaysErrorTransport{err: io.EOF},
+	})
+	client.rateLimiter = rate.NewLimiter(rate.Inf, 1)
+	client.retryConfig.MaxRetries = 0
+
+	details, err := client.makePublicAPICall(context.Background(), http.MethodGet, "v1/incidents", nil, nil)
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if details.ErrorCategory != "network" {
+		t.Errorf("expected network category, got %q", details.ErrorCategory)
+	}
+}
+
+func TestEngineDoesNotCountCancelledBackoffAsRetry(t *testing.T) {
+	requestHandled := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		close(requestHandled)
+	}))
+	defer server.Close()
+
+	client := NewClientWithArgs("id", "key", server.URL, ClientArgs{
+		RateLimit: 1000,
+		RetryConfig: &RetryConfig{
+			MaxRetries:        1,
+			InitialBackoff:    time.Second,
+			MaxBackoff:        time.Second,
+			BackoffMultiplier: 1,
+			RetryableStatus:   []int{http.StatusInternalServerError},
+		},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-requestHandled
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	details, err := client.makePublicAPICall(ctx, http.MethodGet, "v1/incidents", nil, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+	if details.RetryCount != 0 {
+		t.Errorf("expected no completed retry, got %d", details.RetryCount)
+	}
+}

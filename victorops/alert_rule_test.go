@@ -2,6 +2,7 @@ package victorops
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"testing"
 )
@@ -12,6 +13,9 @@ func TestListAlertRules(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v1/alertRules", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
+		if got := r.URL.Query().Get("routing_key"); got != "*" {
+			t.Errorf("expected routing_key=*, got %q", got)
+		}
 		w.Write([]byte(`[{"id":10,"alertField":"host","alertValueMatch":"web*","matchType":"WILDCARD","stopFlag":true}]`))
 	})
 
@@ -30,6 +34,13 @@ func TestCreateAlertRule(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v1/alertRules", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "POST")
+		var payload map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if payload["routeKey"] == nil || payload["routingKey"] != nil {
+			t.Errorf("expected routeKey and no routingKey in payload: %#v", payload)
+		}
 		w.Write([]byte(`{"id":11,"alertField":"service","alertValueMatch":"db","matchType":"WILDCARD"}`))
 	})
 
@@ -37,12 +48,38 @@ func TestCreateAlertRule(t *testing.T) {
 		AlertField:      "service",
 		AlertValueMatch: "db",
 		MatchType:       "WILDCARD",
+		RoutingKey:      "database",
 		Annotations:     []AlertAnnotationPayload{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if rule.ID != 11 || rule.AlertField != "service" {
+		t.Errorf("unexpected rule: %#v", rule)
+	}
+}
+
+func TestGetAlertRuleByUpdate(t *testing.T) {
+	setup()
+	defer teardown()
+
+	testMux.HandleFunc("/api-public/v1/alertRules/22", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, "PUT")
+		w.Write([]byte(`{"id":22,"alertField":"service","routeKey":"database"}`))
+	})
+
+	rule, _, err := testClient.GetAlertRuleByUpdate(context.Background(), "22", &AlertRulePayload{
+		AlertField:      "service",
+		AlertValueMatch: "db",
+		MatchType:       "WILDCARD",
+		Rank:            1,
+		RoutingKey:      "database",
+		Annotations:     []AlertAnnotationPayload{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rule == nil || rule.ID != 22 || rule.RouteKey != "database" {
 		t.Errorf("unexpected rule: %#v", rule)
 	}
 }

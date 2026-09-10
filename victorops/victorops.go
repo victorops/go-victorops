@@ -146,13 +146,10 @@ func parseRetryAfter(resp *http.Response) time.Duration {
 // categorizeError classifies an outcome based on status code and transport error.
 func categorizeError(statusCode int, err error) string {
 	if err != nil {
-		errStr := err.Error()
-		if strings.Contains(errStr, "timeout") ||
-			strings.Contains(errStr, "connection refused") ||
-			strings.Contains(errStr, "no such host") ||
-			strings.Contains(errStr, "network") {
-			return "network"
-		}
+		// Errors returned by http.Client.Do are transport failures. Avoid
+		// classifying them by message text, which misses EOF, TLS, connection
+		// reset, and many wrapped net errors.
+		return "network"
 	}
 	switch {
 	case statusCode == 429:
@@ -306,11 +303,11 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 
 			// Only retry idempotent methods on transport failures.
 			if idempotent && attempt < c.retryConfig.MaxRetries {
-				details.RetryCount = attempt + 1
 				select {
 				case <-ctx.Done():
 					return details, ctx.Err()
 				case <-time.After(c.calculateBackoff(attempt)):
+					details.RetryCount = attempt + 1
 					continue
 				}
 			}
@@ -328,11 +325,11 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 				return details, ctx.Err()
 			}
 			if idempotent && attempt < c.retryConfig.MaxRetries {
-				details.RetryCount = attempt + 1
 				select {
 				case <-ctx.Done():
 					return details, ctx.Err()
 				case <-time.After(c.calculateBackoff(attempt)):
+					details.RetryCount = attempt + 1
 					continue
 				}
 			}
@@ -362,8 +359,6 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 
 		// Retry only idempotent methods on retryable status codes.
 		if idempotent && c.isRetryableStatus(resp.StatusCode) && attempt < c.retryConfig.MaxRetries {
-			details.RetryCount = attempt + 1
-
 			backoff := c.calculateBackoff(attempt)
 			if responseRetryAfter > backoff {
 				backoff = responseRetryAfter
@@ -373,6 +368,7 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 			case <-ctx.Done():
 				return details, ctx.Err()
 			case <-time.After(backoff):
+				details.RetryCount = attempt + 1
 				continue
 			}
 		}
@@ -432,6 +428,9 @@ func NewClientWithArgs(apiID string, apiKey string, publicBaseURL string, args C
 	retryConfig := DefaultRetryConfig()
 	if args.RetryConfig != nil {
 		retryConfig = *args.RetryConfig
+	}
+	if retryConfig.MaxRetries < 0 {
+		retryConfig.MaxRetries = 0
 	}
 
 	timeout := time.Duration(args.TimeoutSeconds) * time.Second

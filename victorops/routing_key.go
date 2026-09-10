@@ -9,8 +9,9 @@ import (
 
 // RoutingKey is a struct to hold the data for a victorops routing key.
 type RoutingKey struct {
-	RoutingKey string   `json:"routingKey,omitempty"`
-	Targets    []string `json:"targets,omitempty"`
+	RoutingKey       string   `json:"routingKey,omitempty"`
+	Targets          []string `json:"targets,omitempty"`
+	IsMultiResponder bool     `json:"isMultiResponder,omitempty"`
 }
 
 // RoutingKeyUpdatePayload is the request body for updating a routing key. The
@@ -39,8 +40,10 @@ func parseRoutingKeyResponse(response string) (*RoutingKey, error) {
 // a map of values like so: {"policyName":"Moderate Severity","policySlug":"pol-tq09wTVkG7BzuMY0","_teamUrl":"/api-public/v1/team/team-Iei67wjVsD14Pe4O"}
 // So these structs exist to represent read responses rather that create requests.
 type RoutingKeyResponse struct {
-	RoutingKey string                      `json:"routingKey,omitempty"`
-	Targets    []RoutingKeyResponseTargets `json:"targets,omitempty"`
+	RoutingKey       string                      `json:"routingKey,omitempty"`
+	Targets          []RoutingKeyResponseTargets `json:"targets,omitempty"`
+	IsDefault        bool                        `json:"isDefault,omitempty"`
+	IsMultiResponder bool                        `json:"isMultiResponder,omitempty"`
 }
 type RoutingKeyResponseList struct {
 	RoutingKeys []RoutingKeyResponse `json:"routingKeys,omitempty"`
