@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 // User is a user in the VictorOps org.
@@ -171,7 +172,10 @@ func (c *Client) GetAllUserV2(ctx context.Context) (*UserListV2, *RequestDetails
 
 // GetUserByEmail returns a list of all of the user(s) in the victorops org that matches the given email
 func (c *Client) GetUserByEmail(ctx context.Context, email string) (*UserListV2, *RequestDetails, error) {
-	return c.getAllUsersV2(ctx, userV2Endpoint, map[string]string{"email": email})
+	// This endpoint does not decode an escaped @ in the email query value.
+	// Escape the rest of the value normally, but preserve @ for API compatibility.
+	escapedEmail := strings.ReplaceAll(url.QueryEscape(email), "%40", "@")
+	return c.getAllUsersV2(ctx, userV2Endpoint+"?email="+escapedEmail, nil)
 }
 
 func (c *Client) getAllUsersV2(ctx context.Context, endpoint string, queryParams map[string]string) (*UserListV2, *RequestDetails, error) {

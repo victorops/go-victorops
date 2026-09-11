@@ -67,7 +67,27 @@ func TestSearchIncidents(t *testing.T) {
 		if q.Get("limit") != "20" || q.Get("host") != "web01" {
 			t.Errorf("unexpected query params: %v", q)
 		}
-		w.Write([]byte(`{"total":1,"limit":20,"incidents":[{"incidentNumber":"5","host":"web01"}]}`))
+		w.Write([]byte(`{
+			"total": 1,
+			"limit": 20,
+			"incidents": [{
+				"incidentNumber": "5",
+				"entityState": "CRITICAL",
+				"entityType": "HOST",
+				"lastAlertId": "alert-1",
+				"lastAlertTime": "2026-01-01T00:05:00Z",
+				"host": "web01",
+				"pagedPolicies": [{
+					"policy": {"name": "Primary", "slug": "pol-1"},
+					"team": {"name": "Team A", "slug": "team-a"}
+				}],
+				"transitions": [{
+					"name": "ACKED",
+					"at": "2026-01-01T00:06:00Z",
+					"by": "johndoe"
+				}]
+			}]
+		}`))
 	})
 
 	list, _, err := testClient.SearchIncidents(context.Background(), &SearchIncidentsOptions{
@@ -79,6 +99,16 @@ func TestSearchIncidents(t *testing.T) {
 	}
 	if list.Total != 1 || len(list.Incidents) != 1 || list.Incidents[0].Host != "web01" {
 		t.Errorf("unexpected incidents: %#v", list)
+	}
+	incident := list.Incidents[0]
+	if incident.EntityState != "CRITICAL" || incident.EntityType != "HOST" || incident.LastAlertID != "alert-1" || incident.LastAlertTime == "" {
+		t.Errorf("incomplete incident fields: %#v", incident)
+	}
+	if len(incident.PagedPolicies) != 1 || incident.PagedPolicies[0].Policy.Slug != "pol-1" {
+		t.Errorf("unexpected paged policies: %#v", incident.PagedPolicies)
+	}
+	if len(incident.Transitions) != 1 || incident.Transitions[0].Name != "ACKED" || incident.Transitions[0].By != "johndoe" {
+		t.Errorf("unexpected transitions: %#v", incident.Transitions)
 	}
 }
 

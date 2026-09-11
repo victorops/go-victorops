@@ -40,18 +40,24 @@ type OnCallLog struct {
 
 // ReportingIncident represents an incident in the reporting API
 type ReportingIncident struct {
-	IncidentNumber    string   `json:"incidentNumber,omitempty"`
-	EntityID          string   `json:"entityId,omitempty"`
-	EntityDisplayName string   `json:"entityDisplayName,omitempty"`
-	CurrentPhase      string   `json:"currentPhase,omitempty"`
-	StartTime         string   `json:"startTime,omitempty"`
-	EndTime           string   `json:"endTime,omitempty"`
-	Host              string   `json:"host,omitempty"`
-	Service           string   `json:"service,omitempty"`
-	RoutingKey        string   `json:"routingKey,omitempty"`
-	AlertCount        int      `json:"alertCount,omitempty"`
-	PagedUsers        []string `json:"pagedUsers,omitempty"`
-	PagedTeams        []string `json:"pagedTeams,omitempty"`
+	IncidentNumber    string        `json:"incidentNumber,omitempty"`
+	EntityID          string        `json:"entityId,omitempty"`
+	EntityDisplayName string        `json:"entityDisplayName,omitempty"`
+	EntityState       string        `json:"entityState,omitempty"`
+	EntityType        string        `json:"entityType,omitempty"`
+	CurrentPhase      string        `json:"currentPhase,omitempty"`
+	StartTime         string        `json:"startTime,omitempty"`
+	EndTime           string        `json:"endTime,omitempty"`
+	LastAlertID       string        `json:"lastAlertId,omitempty"`
+	LastAlertTime     string        `json:"lastAlertTime,omitempty"`
+	Host              string        `json:"host,omitempty"`
+	Service           string        `json:"service,omitempty"`
+	RoutingKey        string        `json:"routingKey,omitempty"`
+	AlertCount        int           `json:"alertCount,omitempty"`
+	PagedUsers        []string      `json:"pagedUsers,omitempty"`
+	PagedTeams        []string      `json:"pagedTeams,omitempty"`
+	PagedPolicies     []PagedPolicy `json:"pagedPolicies,omitempty"`
+	Transitions       []Transition  `json:"transitions,omitempty"`
 }
 
 // ReportingIncidentList represents the response from the reporting incidents endpoint

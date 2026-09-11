@@ -277,11 +277,13 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 		req.Header.Set("X-VO-Api-Key", c.apiKey)
 		req.Header.Set("Content-Type", "application/json")
 
-		q := req.URL.Query()
-		for key, value := range queryParams {
-			q.Add(key, value)
+		if len(queryParams) > 0 {
+			q := req.URL.Query()
+			for key, value := range queryParams {
+				q.Add(key, value)
+			}
+			req.URL.RawQuery = q.Encode()
 		}
-		req.URL.RawQuery = q.Encode()
 
 		details.RawRequest = cloneRequestRedacted(req, bodyBytes)
 		requestDump, err := dumpRequestRedacted(req, bodyBytes)
@@ -318,6 +320,17 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 
 		responseBody, readErr := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
+		// Preserve all response metadata even when reading the body fails. io.ReadAll
+		// may return useful partial content together with an error.
+		details.StatusCode = resp.StatusCode
+		details.ResponseBody = string(responseBody)
+		diagnosticResp := new(http.Response)
+		*diagnosticResp = *resp
+		diagnosticResp.Request = details.RawRequest
+		details.RawResponse = diagnosticResp
+		details.ErrorCategory = categorizeError(resp.StatusCode, nil)
+
 		if readErr != nil {
 			lastErr = readErr
 			details.ErrorCategory = "network"
@@ -335,14 +348,6 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 			}
 			return details, readErr
 		}
-
-		details.StatusCode = resp.StatusCode
-		details.ResponseBody = string(responseBody)
-		diagnosticResp := new(http.Response)
-		*diagnosticResp = *resp
-		diagnosticResp.Request = details.RawRequest
-		details.RawResponse = diagnosticResp
-		details.ErrorCategory = categorizeError(resp.StatusCode, nil)
 
 		// Parse this response's Retry-After locally so a stale value from an
 		// earlier attempt never influences a later, unrelated retry delay

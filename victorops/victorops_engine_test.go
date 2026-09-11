@@ -275,10 +275,18 @@ func TestEngineRedactsCredentials(t *testing.T) {
 	}
 }
 
-type failingReadCloser struct{}
+type failingReadCloser struct {
+	read bool
+}
 
-func (failingReadCloser) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
-func (failingReadCloser) Close() error             { return nil }
+func (r *failingReadCloser) Read(p []byte) (int, error) {
+	if r.read {
+		return 0, io.ErrUnexpectedEOF
+	}
+	r.read = true
+	return copy(p, `{"partial":`), io.ErrUnexpectedEOF
+}
+func (*failingReadCloser) Close() error { return nil }
 
 type bodyFailureTransport struct{ calls *int32 }
 
@@ -287,7 +295,7 @@ func (t bodyFailureTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     make(http.Header),
-		Body:       failingReadCloser{},
+		Body:       &failingReadCloser{},
 		Request:    req,
 	}, nil
 }
@@ -305,12 +313,21 @@ func TestEngineRetriesResponseBodyReadFailure(t *testing.T) {
 		BackoffMultiplier: 1,
 	}
 
-	_, err := client.makePublicAPICall(context.Background(), http.MethodGet, "v1/incidents", nil, nil)
+	details, err := client.makePublicAPICall(context.Background(), http.MethodGet, "v1/incidents", nil, nil)
 	if !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("expected response-body read error, got %v", err)
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Fatalf("expected one retry after response-body failure, got %d calls", got)
+	}
+	if details.StatusCode != http.StatusOK || details.ResponseBody != `{"partial":` {
+		t.Errorf("expected status and partial response body, got %#v", details)
+	}
+	if details.RawResponse == nil || details.RawResponse.StatusCode != http.StatusOK {
+		t.Errorf("expected raw response metadata, got %#v", details.RawResponse)
+	}
+	if details.ErrorCategory != "network" {
+		t.Errorf("expected network error category, got %q", details.ErrorCategory)
 	}
 }
 

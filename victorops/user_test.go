@@ -214,6 +214,9 @@ func TestGetUsersByEmailV2(t *testing.T) {
 	testEmail := "go_test@victorops.com"
 	testMux.HandleFunc("/api-public/v2/user", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
+		if r.URL.RawQuery != "email=go_test@victorops.com" {
+			t.Errorf("email query must preserve @, got %q", r.URL.RawQuery)
+		}
 		w.Write([]byte(`{
 			"users": [
 			  {
