@@ -441,6 +441,50 @@ func TestEngineClassifiesEveryTransportErrorAsNetwork(t *testing.T) {
 	}
 }
 
+type responseThenErrorTransport struct{ calls int32 }
+
+func (t *responseThenErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if atomic.AddInt32(&t.calls, 1) == 1 {
+		return &http.Response{
+			StatusCode: http.StatusInternalServerError,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"error":"temporary"}`)),
+			Request:    req,
+		}, nil
+	}
+	return nil, io.EOF
+}
+
+func TestEngineClearsStaleResponseAfterTransportFailure(t *testing.T) {
+	transport := &responseThenErrorTransport{}
+	client := NewConfigurableClient("id", "key", "http://example.invalid", http.Client{Transport: transport})
+	client.rateLimiter = rate.NewLimiter(rate.Inf, 1)
+	client.retryConfig = RetryConfig{
+		MaxRetries:        1,
+		InitialBackoff:    time.Millisecond,
+		MaxBackoff:        time.Millisecond,
+		BackoffMultiplier: 1,
+		RetryableStatus:   []int{http.StatusInternalServerError},
+	}
+
+	details, err := client.makePublicAPICall(context.Background(), http.MethodGet, "v1/incidents", nil, nil)
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected final transport error, got %v", err)
+	}
+	if got := atomic.LoadInt32(&transport.calls); got != 2 {
+		t.Fatalf("expected one HTTP response followed by one transport failure, got %d attempts", got)
+	}
+	if details.StatusCode != 0 || details.ResponseBody != "" || details.RawResponse != nil {
+		t.Errorf("stale response diagnostics survived the transport failure: %#v", details)
+	}
+	if details.ErrorCategory != "network" {
+		t.Errorf("expected network category, got %q", details.ErrorCategory)
+	}
+	if details.RetryCount != 1 {
+		t.Errorf("expected one completed retry, got %d", details.RetryCount)
+	}
+}
+
 func TestEngineDoesNotCountCancelledBackoffAsRetry(t *testing.T) {
 	requestHandled := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

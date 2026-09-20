@@ -262,6 +262,13 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 			return details, fmt.Errorf("rate limiter error: %w", err)
 		}
 
+		// Response diagnostics describe only the current attempt. Without resetting
+		// them, a transport failure after a retryable HTTP response would leave the
+		// previous attempt's status and body attached to the final network error.
+		details.StatusCode = 0
+		details.ResponseBody = ""
+		details.RawResponse = nil
+
 		var body io.Reader
 		if bodyBytes != nil {
 			body = bytes.NewReader(bodyBytes)
