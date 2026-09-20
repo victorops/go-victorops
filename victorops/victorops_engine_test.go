@@ -512,6 +512,9 @@ func TestEngineClearsStaleResponseBeforeRateLimiterFailure(t *testing.T) {
 	if details.ErrorCategory != "rate_limit" {
 		t.Errorf("expected rate_limit category, got %q", details.ErrorCategory)
 	}
+	if details.RetryCount != 0 {
+		t.Errorf("expected no initiated retry, got %d", details.RetryCount)
+	}
 }
 
 func TestEngineDoesNotCountCancelledBackoffAsRetry(t *testing.T) {

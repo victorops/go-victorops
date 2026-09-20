@@ -300,6 +300,11 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 		}
 		details.RequestBody = requestDump
 
+		// Count a retry only when its HTTP attempt is actually initiated. Backoff
+		// completion alone is not a retry because limiter admission may still fail.
+		if attempt > 0 {
+			details.RetryCount = attempt
+		}
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			lastErr = err
@@ -316,7 +321,6 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 				case <-ctx.Done():
 					return details, ctx.Err()
 				case <-time.After(c.calculateBackoff(attempt)):
-					details.RetryCount = attempt + 1
 					continue
 				}
 			}
@@ -349,7 +353,6 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 				case <-ctx.Done():
 					return details, ctx.Err()
 				case <-time.After(c.calculateBackoff(attempt)):
-					details.RetryCount = attempt + 1
 					continue
 				}
 			}
@@ -380,7 +383,6 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 			case <-ctx.Done():
 				return details, ctx.Err()
 			case <-time.After(backoff):
-				details.RetryCount = attempt + 1
 				continue
 			}
 		}
