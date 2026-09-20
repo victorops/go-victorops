@@ -46,7 +46,7 @@ type RotationShiftDetails struct {
 }
 
 // RotationOnCallPeriod represents an on-call period returned by the v2 API.
-// apppublic serializes its timestamps as ISO-8601 strings.
+// The public API serializes its timestamps as ISO-8601 strings.
 type RotationOnCallPeriod struct {
 	Start      string `json:"start,omitempty"`
 	End        string `json:"end,omitempty"`

@@ -308,7 +308,7 @@ func rotationShiftPayloadMap(payload *RotationShiftCreatePayload, jodaDate bool)
 		members = payload.ShiftMembers
 	}
 	if len(members) > 0 {
-		// apppublic consumes usernames. Keep shiftMembers on the wire as well
+		// The public API consumes usernames. Keep shiftMembers on the wire as well
 		// for gateways and callers that use the established legacy field.
 		shift["usernames"] = members
 		shift["shiftMembers"] = members

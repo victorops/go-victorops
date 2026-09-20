@@ -106,7 +106,7 @@ type ContactTypesResponse struct {
 }
 
 // TimeoutType represents a timeout type available for paging policies. The
-// published schema defines Type as an integer, while some deployed apppublic
+// published schema defines Type as an integer, while some deployed public API
 // versions serialize it as a numeric string; UnmarshalJSON accepts both.
 type TimeoutType struct {
 	Description string `json:"description,omitempty"`
