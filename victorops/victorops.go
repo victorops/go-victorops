@@ -342,6 +342,14 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 		details.RawResponse = diagnosticResp
 		details.ErrorCategory = categorizeError(resp.StatusCode, nil)
 
+		// Capture rate-limit headers before handling a body-read failure. Headers are
+		// complete once Do returns even when the response body is truncated.
+		responseRetryAfter := parseRetryAfter(resp)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			details.RateLimited = true
+			details.RetryAfter = responseRetryAfter
+		}
+
 		if readErr != nil {
 			lastErr = readErr
 			details.ErrorCategory = "network"
@@ -349,27 +357,18 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 				return details, ctx.Err()
 			}
 			if idempotent && attempt < c.retryConfig.MaxRetries {
+				backoff := c.calculateBackoff(attempt)
+				if responseRetryAfter > backoff {
+					backoff = responseRetryAfter
+				}
 				select {
 				case <-ctx.Done():
 					return details, ctx.Err()
-				case <-time.After(c.calculateBackoff(attempt)):
+				case <-time.After(backoff):
 					continue
 				}
 			}
 			return details, readErr
-		}
-
-		// Parse this response's Retry-After locally so a stale value from an
-		// earlier attempt never influences a later, unrelated retry delay
-		// (e.g. a 429 Retry-After:30 followed by a 500 with no header).
-		responseRetryAfter := parseRetryAfter(resp)
-
-		// Record rate-limit signals for any 429, regardless of whether the
-		// request is retried (non-idempotent method, retries disabled, or a
-		// final 429 after exhausting retries all still surface RateLimited).
-		if resp.StatusCode == http.StatusTooManyRequests {
-			details.RateLimited = true
-			details.RetryAfter = responseRetryAfter
 		}
 
 		// Retry only idempotent methods on retryable status codes.

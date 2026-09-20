@@ -101,6 +101,13 @@ failures are now returned as `*victorops.APIError` with a `*victorops.RequestDet
 value for diagnostics. Calls are rate-limited by default, and eligible transient failures
 may be retried according to the configured retry policy.
 
+This is not an import-only migration. Some request and response models were aligned with
+the public API: routing-key updates use `RoutingKeyUpdatePayload`, paging rules use a
+nested `PagingRuleContact`, rotation writes use numeric IDs plus `RotationGroupMask` and
+`MaskTime`, and maintenance-mode instances expose `Targets` rather than flattened routing
+keys. Compile existing callers against v2 and adapt these signatures and models before
+deploying the upgrade.
+
 ## Error handling & diagnostics
 
 API operations expose a `*RequestDetails` return value alongside their typed result and
@@ -135,7 +142,7 @@ if err != nil {
 
 ## API coverage
 
-104 operations across 18 resource areas.
+More than 100 operations across 18 resource areas.
 
 ### Users
 - `CreateUser` – create a user
@@ -228,7 +235,7 @@ if err != nil {
 ### Alerts
 - `GetAlert` – get an alert by UUID
 
-### Rotations (read-only)
+### Rotation listing (read-only)
 - `ListRotationsV1` – list rotation groups for a team (v1)
 - `GetRotationGroupByGroupID` – find a v1 rotation group by numeric ID
 - `ListRotationsV2` – list rotations with details for a team (v2)
@@ -298,6 +305,5 @@ These are set automatically by the client when you initialize it with a construc
 Unit tests use mocked HTTP servers and do not contact the live API:
 
 ```bash
-cd victorops
-go test -v ./...
+go test -race ./...
 ```

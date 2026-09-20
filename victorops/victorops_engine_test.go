@@ -300,6 +300,18 @@ func (t bodyFailureTransport) RoundTrip(req *http.Request) (*http.Response, erro
 	}, nil
 }
 
+type rateLimitedBodyFailureTransport struct{ calls *int32 }
+
+func (t rateLimitedBodyFailureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	atomic.AddInt32(t.calls, 1)
+	return &http.Response{
+		StatusCode: http.StatusTooManyRequests,
+		Header:     http.Header{"Retry-After": []string{"1"}},
+		Body:       &failingReadCloser{},
+		Request:    req,
+	}, nil
+}
+
 func TestEngineRetriesResponseBodyReadFailure(t *testing.T) {
 	var calls int32
 	client := NewConfigurableClient("id", "key", "http://example.invalid", http.Client{
@@ -328,6 +340,40 @@ func TestEngineRetriesResponseBodyReadFailure(t *testing.T) {
 	}
 	if details.ErrorCategory != "network" {
 		t.Errorf("expected network error category, got %q", details.ErrorCategory)
+	}
+}
+
+func TestEngineRecordsRateLimitBeforeBodyReadFailure(t *testing.T) {
+	var calls int32
+	client := NewConfigurableClient("id", "key", "http://example.invalid", http.Client{
+		Transport: rateLimitedBodyFailureTransport{calls: &calls},
+	})
+	client.rateLimiter = rate.NewLimiter(rate.Inf, 1)
+	client.retryConfig = RetryConfig{
+		MaxRetries:        1,
+		InitialBackoff:    time.Millisecond,
+		MaxBackoff:        time.Millisecond,
+		BackoffMultiplier: 1,
+		RetryableStatus:   []int{http.StatusTooManyRequests},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	details, err := client.makePublicAPICall(ctx, http.MethodGet, "v1/incidents", nil, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected Retry-After wait to end at the context deadline, got %v", err)
+	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("expected Retry-After to prevent a second attempt, got %d calls", got)
+	}
+	if !details.RateLimited || details.RetryAfter != time.Second {
+		t.Errorf("expected rate-limit metadata from response headers, got %#v", details)
+	}
+	if details.StatusCode != http.StatusTooManyRequests || details.ResponseBody != `{"partial":` {
+		t.Errorf("expected status and partial response body, got %#v", details)
+	}
+	if details.RetryCount != 0 {
+		t.Errorf("expected no initiated retry, got %d", details.RetryCount)
 	}
 }
 
