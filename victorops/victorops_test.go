@@ -1,6 +1,7 @@
 package victorops
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +44,7 @@ func testMethod(t *testing.T, r *http.Request, want string) {
 }
 
 func TestConfigurableClient(t *testing.T) {
-	args := ClientArgs{timeoutSeconds: 30}
+	args := http.Client{Timeout: 30 * time.Second}
 	testMux = http.NewServeMux()
 	testServer = httptest.NewServer(testMux)
 
@@ -55,7 +56,6 @@ func TestConfigurableClient(t *testing.T) {
 }
 
 func TestConfigurableClientTimeout(t *testing.T) {
-	args := ClientArgs{timeoutSeconds: 1}
 	testMux = http.NewServeMux()
 	testServer = httptest.NewServer(testMux)
 
@@ -63,11 +63,16 @@ func TestConfigurableClientTimeout(t *testing.T) {
 		time.Sleep(2 * time.Second)
 	})
 
-	testConfigurableClient := NewConfigurableClient("apiID", "apiKey", testServer.URL, args)
+	// Disable retries so the idempotent GET fails fast on the single timeout
+	// rather than replaying the request across the backoff schedule.
+	testConfigurableClient := NewClientWithArgs("apiID", "apiKey", testServer.URL, ClientArgs{
+		TimeoutSeconds: 1,
+		RetryConfig:    &RetryConfig{MaxRetries: 0},
+	})
 	log.Printf("Client instantiated: %s", testConfigurableClient.publicBaseURL)
-	_, _, err := testConfigurableClient.GetAllUsers()
+	_, _, err := testConfigurableClient.GetAllUsers(context.Background())
 
-	if !strings.Contains(err.Error(), "context deadline exceeded (Client.Timeout exceeded while awaiting headers)") {
-		t.Errorf("expected to to see timeout error, but saw: %s", err.Error())
+	if err == nil || !strings.Contains(err.Error(), "context deadline exceeded (Client.Timeout exceeded while awaiting headers)") {
+		t.Errorf("expected to see timeout error, but saw: %v", err)
 	}
 }

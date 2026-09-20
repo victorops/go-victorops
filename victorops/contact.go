@@ -2,8 +2,8 @@ package victorops
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
-	"log"
 	"net/url"
 )
 
@@ -84,13 +84,13 @@ func parseContactResponse(response string) (*Contact, error) {
 }
 
 // CreateContact creates a new contact for a user
-func (c Client) CreateContact(username string, contact *Contact) (*Contact, *RequestDetails, error) {
+func (c *Client) CreateContact(ctx context.Context, username string, contact *Contact) (*Contact, *RequestDetails, error) {
 	jsonContact, err := json.Marshal(contact)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	requestDetails, err := c.makePublicAPICall("POST", "v1/user/"+url.QueryEscape(username)+"/contact-methods/"+contact.Type().endpointNoun, bytes.NewBuffer(jsonContact), nil)
+	requestDetails, err := c.makePublicAPICall(ctx, "POST", "v1/user/"+url.PathEscape(username)+"/contact-methods/"+contact.Type().endpointNoun, bytes.NewBuffer(jsonContact), nil)
 	if err != nil {
 		return nil, requestDetails, err
 	}
@@ -104,8 +104,8 @@ func (c Client) CreateContact(username string, contact *Contact) (*Contact, *Req
 }
 
 // GetContact gets a contact for a user
-func (c Client) GetContact(username string, contactExtID string, contactType ContactType) (*Contact, *RequestDetails, error) {
-	requestDetails, err := c.makePublicAPICall("GET", "v1/user/"+url.QueryEscape(username)+"/contact-methods/"+contactType.endpointNoun+"/"+contactExtID, bytes.NewBufferString("{}"), nil)
+func (c *Client) GetContact(ctx context.Context, username string, contactExtID string, contactType ContactType) (*Contact, *RequestDetails, error) {
+	requestDetails, err := c.makePublicAPICall(ctx, "GET", "v1/user/"+url.PathEscape(username)+"/contact-methods/"+contactType.endpointNoun+"/"+url.PathEscape(contactExtID), bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, requestDetails, err
 	}
@@ -119,9 +119,9 @@ func (c Client) GetContact(username string, contactExtID string, contactType Con
 }
 
 // GetAllContacts returns a list of all of the contacts for a user in the victorops org
-func (c Client) GetAllContacts(username string) (*AllContactResponse, *RequestDetails, error) {
+func (c *Client) GetAllContacts(ctx context.Context, username string) (*AllContactResponse, *RequestDetails, error) {
 	// Make the request
-	requestDetails, err := c.makePublicAPICall("GET", "v1/user/"+url.QueryEscape(username)+"/contact-methods", bytes.NewBufferString("{}"), nil)
+	requestDetails, err := c.makePublicAPICall(ctx, "GET", "v1/user/"+url.PathEscape(username)+"/contact-methods", bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, requestDetails, err
 	}
@@ -135,8 +135,8 @@ func (c Client) GetAllContacts(username string) (*AllContactResponse, *RequestDe
 }
 
 // DeleteContact deletes a contact
-func (c Client) DeleteContact(username string, contactExtID string, contactType ContactType) (*RequestDetails, error) {
-	requestDetails, err := c.makePublicAPICall("DELETE", "v1/user/"+url.QueryEscape(username)+"/contact-methods/"+contactType.endpointNoun+"/"+contactExtID, bytes.NewBufferString("{}"), nil)
+func (c *Client) DeleteContact(ctx context.Context, username string, contactExtID string, contactType ContactType) (*RequestDetails, error) {
+	requestDetails, err := c.makePublicAPICall(ctx, "DELETE", "v1/user/"+url.PathEscape(username)+"/contact-methods/"+contactType.endpointNoun+"/"+url.PathEscape(contactExtID), bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return requestDetails, err
 	}
@@ -144,12 +144,48 @@ func (c Client) DeleteContact(username string, contactExtID string, contactType 
 	return requestDetails, nil
 }
 
+// ContactDevice represents a user's contact device as returned by the device update endpoint.
+type ContactDevice struct {
+	DeviceType string `json:"deviceType,omitempty"`
+	Label      string `json:"label,omitempty"`
+	ExtID      string `json:"extId,omitempty"`
+	SelfURL    string `json:"_selfUrl,omitempty"`
+}
+
+// ContactDeviceUpdatePayload is the request body for updating a user's contact device.
+type ContactDeviceUpdatePayload struct {
+	DeviceLabel                 string `json:"device_label,omitempty"`
+	EscalationNotificationSound string `json:"escalation_notification_sound,omitempty"`
+	ChatEscalationSound         string `json:"chat_escalation_sound,omitempty"`
+	ResolvedNotificationSound   string `json:"resolved_notification_sound,omitempty"`
+}
+
+// UpdateDeviceContact updates a user's contact device (label and notification sounds).
+func (c *Client) UpdateDeviceContact(ctx context.Context, username string, contactID string, payload *ContactDeviceUpdatePayload) (*ContactDevice, *RequestDetails, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	details, err := c.makePublicAPICall(ctx, "PUT", "v1/user/"+url.PathEscape(username)+"/contact-methods/devices/"+url.PathEscape(contactID), bytes.NewBuffer(body), nil)
+	if err != nil {
+		return nil, details, err
+	}
+
+	var device ContactDevice
+	if err := json.Unmarshal([]byte(details.ResponseBody), &device); err != nil {
+		return nil, details, err
+	}
+
+	return &device, details, nil
+}
+
 // Get a contact via it's internal api ID, but using the public API
 type GetAllContactResponse struct {
 	ContactMethods []Contact `json:"contactMethods,omitempty"`
 }
 
-func (c Client) GetContactByID(username string, id int, contactType ContactType) (*Contact, *RequestDetails, error) {
+func (c *Client) GetContactByID(ctx context.Context, username string, id int, contactType ContactType) (*Contact, *RequestDetails, error) {
 	// Device 0 is a special device for "All devices"
 	if contactType == GetContactTypes().Device && id == 0 {
 		contact := Contact{
@@ -160,7 +196,7 @@ func (c Client) GetContactByID(username string, id int, contactType ContactType)
 		return &contact, &RequestDetails{}, nil
 	}
 
-	requestDetails, err := c.makePublicAPICall("GET", "v1/user/"+url.QueryEscape(username)+"/contact-methods/"+contactType.endpointNoun, bytes.NewBufferString("{}"), nil)
+	requestDetails, err := c.makePublicAPICall(ctx, "GET", "v1/user/"+url.PathEscape(username)+"/contact-methods/"+contactType.endpointNoun, bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, requestDetails, err
 	}
@@ -168,7 +204,6 @@ func (c Client) GetContactByID(username string, id int, contactType ContactType)
 	contacts := GetAllContactResponse{}
 	err = json.Unmarshal([]byte(requestDetails.ResponseBody), &contacts)
 	if err != nil {
-		log.Println("test")
 		return nil, requestDetails, err
 	}
 

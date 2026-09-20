@@ -2,8 +2,10 @@ package victorops
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 )
 
 // EscalationPolicyStepEntry is a struct to store escalation policy step entries
@@ -29,6 +31,14 @@ type EscalationPolicy struct {
 	IgnoreCustomPagingPolicies bool                    `json:"ignoreCustomPagingPolicies"`
 	Steps                      []EscalationPolicySteps `json:"steps"`
 	ID                         string                  `json:"slug"`
+}
+
+// EscalationPolicyUpdatePayload is the mutable portion accepted by the public
+// escalation-policy update endpoint. Name, teamSlug, and slug are not part of
+// the update contract.
+type EscalationPolicyUpdatePayload struct {
+	IgnoreCustomPagingPolicies bool                    `json:"ignoreCustomPagingPolicies"`
+	Steps                      []EscalationPolicySteps `json:"steps"`
 }
 
 // EscalationPolicyListDetail is a struct to hold the details of a team or policy returned in
@@ -63,13 +73,13 @@ func parseEscalationPolicyRepsonse(response string) (*EscalationPolicy, error) {
 }
 
 // CreateEscalationPolicy creates a new eslacation policy
-func (c Client) CreateEscalationPolicy(escalationPolicy *EscalationPolicy) (*EscalationPolicy, *RequestDetails, error) {
+func (c *Client) CreateEscalationPolicy(ctx context.Context, escalationPolicy *EscalationPolicy) (*EscalationPolicy, *RequestDetails, error) {
 	jsonEp, err := json.Marshal(escalationPolicy)
 	if err != nil {
 		return nil, nil, err
 
 	}
-	details, err := c.makePublicAPICall("POST", "v1/policies", bytes.NewBuffer(jsonEp), nil)
+	details, err := c.makePublicAPICall(ctx, "POST", "v1/policies", bytes.NewBuffer(jsonEp), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -82,9 +92,29 @@ func (c Client) CreateEscalationPolicy(escalationPolicy *EscalationPolicy) (*Esc
 	return newEscalationPolicy, details, nil
 }
 
+// UpdateEscalationPolicy updates an existing escalation policy by its slug/ID.
+func (c *Client) UpdateEscalationPolicy(ctx context.Context, escalationPolicyID string, payload *EscalationPolicyUpdatePayload) (*EscalationPolicy, *RequestDetails, error) {
+	jsonEp, err := json.Marshal(payload)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	details, err := c.makePublicAPICall(ctx, "PUT", "v1/policies/"+url.PathEscape(escalationPolicyID), bytes.NewBuffer(jsonEp), nil)
+	if err != nil {
+		return nil, details, err
+	}
+
+	updated, err := parseEscalationPolicyRepsonse(details.ResponseBody)
+	if err != nil {
+		return updated, details, err
+	}
+
+	return updated, details, nil
+}
+
 // GetAllEscalationPolicies lists all escalation policies for the org
-func (c Client) GetAllEscalationPolicies() (*EscalationPolicyList, *RequestDetails, error) {
-	details, err := c.makePublicAPICall("GET", "v1/policies", http.NoBody, nil)
+func (c *Client) GetAllEscalationPolicies(ctx context.Context) (*EscalationPolicyList, *RequestDetails, error) {
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/policies", http.NoBody, nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -98,8 +128,8 @@ func (c Client) GetAllEscalationPolicies() (*EscalationPolicyList, *RequestDetai
 }
 
 // GetEscalationPolicy gets an escalation policy by ID
-func (c Client) GetEscalationPolicy(escalationPolicyID string) (*EscalationPolicy, *RequestDetails, error) {
-	details, err := c.makePublicAPICall("GET", "v1/policies/"+escalationPolicyID, bytes.NewBufferString("{}"), nil)
+func (c *Client) GetEscalationPolicy(ctx context.Context, escalationPolicyID string) (*EscalationPolicy, *RequestDetails, error) {
+	details, err := c.makePublicAPICall(ctx, "GET", "v1/policies/"+url.PathEscape(escalationPolicyID), bytes.NewBufferString("{}"), nil)
 	if err != nil {
 		return nil, details, err
 	}
@@ -113,8 +143,8 @@ func (c Client) GetEscalationPolicy(escalationPolicyID string) (*EscalationPolic
 }
 
 // DeleteEscalationPolicy deletes an escalation policy by ID
-func (c Client) DeleteEscalationPolicy(escalationPolicyID string) (*RequestDetails, error) {
+func (c *Client) DeleteEscalationPolicy(ctx context.Context, escalationPolicyID string) (*RequestDetails, error) {
 	// Make the request
-	details, err := c.makePublicAPICall("DELETE", "v1/policies/"+escalationPolicyID, bytes.NewBufferString("{}"), nil)
+	details, err := c.makePublicAPICall(ctx, "DELETE", "v1/policies/"+url.PathEscape(escalationPolicyID), bytes.NewBufferString("{}"), nil)
 	return details, err
 }
