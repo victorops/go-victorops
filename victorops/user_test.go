@@ -49,6 +49,7 @@ func TestCreateUser(t *testing.T) {
 		CreatedAt:           "2020-03-25T17:49:01Z",
 		PasswordLastUpdated: "2020-03-25T17:49:01Z",
 		Verified:            false,
+		SelfURL:             "/api-public/v1/user/go_testuser",
 	}
 
 	if !reflect.DeepEqual(resp, want) {
@@ -157,11 +158,13 @@ func TestGetAllUsersV2(t *testing.T) {
 	user := User{
 		FirstName:           "test",
 		LastName:            "user",
+		DisplayName:         "test user",
 		Username:            "go_testuser",
 		Email:               "go_test@victorops.com",
 		CreatedAt:           "2018-06-16T01:19:39Z",
 		PasswordLastUpdated: "2018-07-16T22:48:01Z",
 		Verified:            true,
+		SelfURL:             "/api-public/v1/user/go_testuser",
 	}
 
 	expected := &UserListV2{
@@ -241,11 +244,13 @@ func TestGetUsersByEmailV2(t *testing.T) {
 	user := User{
 		FirstName:           "test",
 		LastName:            "user",
+		DisplayName:         "test user",
 		Username:            "go_testuser",
 		Email:               testEmail,
 		CreatedAt:           "2018-06-16T01:19:39Z",
 		PasswordLastUpdated: "2018-07-16T22:48:01Z",
 		Verified:            true,
+		SelfURL:             "/api-public/v2/user/go_testuser",
 	}
 
 	expected := &UserListV2{

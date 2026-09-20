@@ -262,19 +262,22 @@ func (c *Client) createRotationRequest(ctx context.Context, teamSlug string, pay
 }
 
 func marshalRotationGroupCreatePayload(payload *RotationGroupCreatePayload, jodaDate bool) ([]byte, error) {
-	if !jodaDate {
-		return json.Marshal(payload)
-	}
-
 	result := map[string]interface{}{"label": payload.Label}
 	if len(payload.Shifts) > 0 {
 		shifts := make([]map[string]interface{}, len(payload.Shifts))
 		for i := range payload.Shifts {
-			shifts[i] = rotationShiftPayloadMap(&payload.Shifts[i], true)
+			shifts[i] = rotationShiftPayloadMap(&payload.Shifts[i], jodaDate)
 		}
 		result["shifts"] = shifts
 	}
 	return json.Marshal(result)
+}
+
+func marshalRotationShiftCreatePayload(payload *RotationShiftCreatePayload, jodaDate bool) ([]byte, error) {
+	if payload == nil {
+		return nil, fmt.Errorf("rotation shift payload cannot be nil")
+	}
+	return json.Marshal(rotationShiftPayloadMap(payload, jodaDate))
 }
 
 func rotationShiftPayloadMap(payload *RotationShiftCreatePayload, jodaDate bool) map[string]interface{} {
@@ -300,12 +303,15 @@ func rotationShiftPayloadMap(payload *RotationShiftCreatePayload, jodaDate bool)
 	if payload.Mask3 != nil {
 		shift["mask3"] = payload.Mask3
 	}
-	if len(payload.Usernames) > 0 {
-		shift["usernames"] = payload.Usernames
-		shift["shiftMembers"] = payload.Usernames
+	members := payload.Usernames
+	if len(members) == 0 {
+		members = payload.ShiftMembers
 	}
-	if len(payload.ShiftMembers) > 0 {
-		shift["shiftMembers"] = payload.ShiftMembers
+	if len(members) > 0 {
+		// apppublic consumes usernames. Keep shiftMembers on the wire as well
+		// for gateways and callers that use the established legacy field.
+		shift["usernames"] = members
+		shift["shiftMembers"] = members
 	}
 	return shift
 }
@@ -410,7 +416,7 @@ func (c *Client) DeleteRotation(ctx context.Context, teamSlug string, groupID in
 
 // CreateRotationShift adds a new shift to an existing rotation group.
 func (c *Client) CreateRotationShift(ctx context.Context, teamSlug string, groupID int64, payload *RotationShiftCreatePayload) (*RotationShiftResource, *RequestDetails, error) {
-	body, err := json.Marshal(payload)
+	body, err := marshalRotationShiftCreatePayload(payload, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -418,7 +424,7 @@ func (c *Client) CreateRotationShift(ctx context.Context, teamSlug string, group
 	endpoint := fmt.Sprintf("%s/%d", rotationsBase(teamSlug), groupID)
 	details, err := c.makePublicAPICall(ctx, "POST", endpoint, bytes.NewBuffer(body), nil)
 	if isJodaDateValidationError(details, err) {
-		body, marshalErr := json.Marshal(rotationShiftPayloadMap(payload, true))
+		body, marshalErr := marshalRotationShiftCreatePayload(payload, true)
 		if marshalErr != nil {
 			return nil, nil, marshalErr
 		}
@@ -454,7 +460,7 @@ func (c *Client) GetRotationShift(ctx context.Context, teamSlug string, groupID 
 
 // UpdateRotationShift fully replaces an existing shift within a rotation group.
 func (c *Client) UpdateRotationShift(ctx context.Context, teamSlug string, groupID int64, shiftID int64, payload *RotationShiftCreatePayload) (*RotationShiftResource, *RequestDetails, error) {
-	body, err := json.Marshal(payload)
+	body, err := marshalRotationShiftCreatePayload(payload, false)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -462,7 +468,7 @@ func (c *Client) UpdateRotationShift(ctx context.Context, teamSlug string, group
 	endpoint := fmt.Sprintf("%s/%d/%d", rotationsBase(teamSlug), groupID, shiftID)
 	details, err := c.makePublicAPICall(ctx, "PUT", endpoint, bytes.NewBuffer(body), nil)
 	if isJodaDateValidationError(details, err) {
-		body, marshalErr := json.Marshal(rotationShiftPayloadMap(payload, true))
+		body, marshalErr := marshalRotationShiftCreatePayload(payload, true)
 		if marshalErr != nil {
 			return nil, nil, marshalErr
 		}

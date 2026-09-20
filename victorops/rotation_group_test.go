@@ -91,6 +91,12 @@ func TestCreateRotationGroupFallsBackToJodaDateAndResolvesID(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatalf("decode create body: %v", err)
 			}
+			for _, field := range []string{"usernames", "shiftMembers"} {
+				members, ok := body.Shifts[0][field].([]interface{})
+				if !ok || len(members) != 1 || members[0] != "jane" {
+					t.Errorf("request should normalize members into %s: %#v", field, body.Shifts[0])
+				}
+			}
 			if postCalls == 1 {
 				if _, ok := body.Shifts[0]["start"].(float64); !ok {
 					t.Errorf("first request should use epoch milliseconds: %#v", body.Shifts[0]["start"])
@@ -101,9 +107,6 @@ func TestCreateRotationGroupFallsBackToJodaDateAndResolvesID(t *testing.T) {
 			}
 			if got, ok := body.Shifts[0]["start"].(string); !ok || got != "2026-09-10T00:00:00.000Z" {
 				t.Errorf("fallback should use Joda-compatible timestamp, got %#v", body.Shifts[0]["start"])
-			}
-			if _, ok := body.Shifts[0]["shiftMembers"]; !ok {
-				t.Errorf("fallback should preserve shift members: %#v", body.Shifts[0])
 			}
 			w.Write([]byte(`{"label":"Fallback","shifts":[{"group_id":101,"rot_id":201,"shiftMembers":[{"slug":"mem-1","username":"jane"}]}]}`))
 		default:
@@ -191,15 +194,26 @@ func TestCreateRotationShift(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v1/teams/team-a/rotations/100", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "POST")
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode create shift body: %v", err)
+		}
+		for _, field := range []string{"usernames", "shiftMembers"} {
+			members, ok := body[field].([]interface{})
+			if !ok || len(members) != 1 || members[0] != "janedoe" {
+				t.Errorf("create shift should normalize members into %s: %#v", field, body)
+			}
+		}
 		w.Write([]byte(`{"rot_id":200,"group_id":100,"label":"Week","shifttype":"std"}`))
 	})
 
 	resp, _, err := testClient.CreateRotationShift(context.Background(), "team-a", 100, &RotationShiftCreatePayload{
-		Label:     "Week",
-		Timezone:  "UTC",
-		Start:     1000,
-		Duration:  7,
-		ShiftType: "std",
+		Label:        "Week",
+		Timezone:     "UTC",
+		Start:        1000,
+		Duration:     7,
+		ShiftType:    "std",
+		ShiftMembers: []string{"janedoe"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -233,6 +247,16 @@ func TestUpdateRotationShift(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v1/teams/team-a/rotations/100/200", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "PUT")
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode update shift body: %v", err)
+		}
+		for _, field := range []string{"usernames", "shiftMembers"} {
+			members, ok := body[field].([]interface{})
+			if !ok || len(members) != 1 || members[0] != "johndoe" {
+				t.Errorf("update shift should preserve usernames in %s: %#v", field, body)
+			}
+		}
 		w.Write([]byte(`{"rot_id":200,"label":"Week2","duration":14}`))
 	})
 
@@ -242,6 +266,7 @@ func TestUpdateRotationShift(t *testing.T) {
 		Start:     1000,
 		Duration:  14,
 		ShiftType: "std",
+		Usernames: []string{"johndoe"},
 	})
 	if err != nil {
 		t.Fatal(err)

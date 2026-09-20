@@ -103,15 +103,32 @@ func TestGetUserPagingPoliciesV2(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v2/profile/johndoe/policies", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
-		w.Write([]byte(`{"policies":[{"policyType":"primary","steps":[{"step":1,"timeout":5}]}]}`))
+		w.Write([]byte(`{"policies":[{"rank":0,"name":"Primary Paging Policy","slug":"primary-paging-policy","timeMask":{"monday":true,"tuesday":true,"wednesday":true,"thursday":true,"friday":true,"saturday":true,"sunday":true,"timeZone":"UTC","startTime":"00:00:00.000","endTime":"00:00:00.000"},"steps":[{"index":0,"timeout":5,"rules":[{"index":0,"type":"push"}]},{"index":1,"timeout":10,"rules":[{"index":0,"type":"email","contact":{"id":456,"type":"Email"}}]}]}]}`))
 	})
 
 	resp, _, err := testClient.GetUserPagingPoliciesV2(context.Background(), "johndoe")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Policies) != 1 || resp.Policies[0].PolicyType != "primary" {
+	if len(resp.Policies) != 1 {
 		t.Errorf("unexpected policies: %#v", resp)
+		return
+	}
+	policy := resp.Policies[0]
+	if policy.Rank != 0 || policy.Name != "Primary Paging Policy" || policy.Slug != "primary-paging-policy" {
+		t.Errorf("unexpected policy identity: %#v", policy)
+	}
+	if !policy.TimeMask.Monday || !policy.TimeMask.Sunday || policy.TimeMask.TimeZone != "UTC" || policy.TimeMask.StartTime != "00:00:00.000" || policy.TimeMask.EndTime != "00:00:00.000" {
+		t.Errorf("unexpected policy time mask: %#v", policy.TimeMask)
+	}
+	if len(policy.Steps) != 2 || len(policy.Steps[0].Rules) != 1 || policy.Steps[0].Rules[0].Type != "push" {
+		t.Fatalf("unexpected policy steps: %#v", policy.Steps)
+	}
+	if len(policy.Steps[1].Rules) != 1 {
+		t.Fatalf("unexpected email policy rules: %#v", policy.Steps[1].Rules)
+	}
+	if got := policy.Steps[1].Rules[0].Contact; got.ID != 456 || got.Type != "Email" {
+		t.Errorf("unexpected email contact: %#v", got)
 	}
 }
 

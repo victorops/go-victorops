@@ -13,13 +13,16 @@ import (
 type User struct {
 	FirstName           string `json:"firstName,omitempty"`
 	LastName            string `json:"lastName,omitempty"`
+	DisplayName         string `json:"displayName,omitempty"`
 	Username            string `json:"username,omitempty"`
 	Email               string `json:"email,omitempty"`
 	Admin               bool   `json:"admin,omitempty"`
 	ExpirationHours     int    `json:"expirationHours,omitempty"`
+	Version             int    `json:"version,omitempty"`
 	CreatedAt           string `json:"createdAt,omitempty"`
 	PasswordLastUpdated string `json:"passwordLastUpdated,omitempty"`
 	Verified            bool   `json:"verified,omitempty"`
+	SelfURL             string `json:"_selfUrl,omitempty"`
 }
 
 // UserList is a list of Users

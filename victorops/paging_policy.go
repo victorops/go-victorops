@@ -31,10 +31,31 @@ type PagingPolicyRule struct {
 	Type    string            `json:"type,omitempty"`
 }
 
-// UserPagingPolicy represents a user's paging policy (v2)
+// PagingPolicyTimeMask identifies the days and daily time window during which
+// a v2 paging policy is active.
+type PagingPolicyTimeMask struct {
+	Monday    bool   `json:"monday"`
+	Tuesday   bool   `json:"tuesday"`
+	Wednesday bool   `json:"wednesday"`
+	Thursday  bool   `json:"thursday"`
+	Friday    bool   `json:"friday"`
+	Saturday  bool   `json:"saturday"`
+	Sunday    bool   `json:"sunday"`
+	TimeZone  string `json:"timeZone"`
+	StartTime string `json:"startTime"`
+	EndTime   string `json:"endTime"`
+}
+
+// UserPagingPolicy represents a user's paging policy (v2). PolicyType is
+// retained for compatibility with deployments that returned the older field;
+// current public API responses identify policies by Rank, Name, and Slug.
 type UserPagingPolicy struct {
-	PolicyType string             `json:"policyType,omitempty"`
-	Steps      []PagingPolicyStep `json:"steps,omitempty"`
+	Rank       int                  `json:"rank"`
+	Name       string               `json:"name,omitempty"`
+	Slug       string               `json:"slug,omitempty"`
+	TimeMask   PagingPolicyTimeMask `json:"timeMask"`
+	Steps      []PagingPolicyStep   `json:"steps,omitempty"`
+	PolicyType string               `json:"policyType,omitempty"`
 }
 
 // UserPagingPoliciesResponse represents the response from v2 policies endpoint

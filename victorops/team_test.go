@@ -157,14 +157,14 @@ func TestGetTeamMembers(t *testing.T) {
 
 	testMux.HandleFunc("/api-public/v1/team/team-abcd/members", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, "GET")
-		w.Write([]byte(`{ "members": [ { "username": "janedoe" }, { "username": "johndoe" } ] }`))
+		w.Write([]byte(`{ "members": [ { "username": "janedoe", "firstName": "Jane", "displayName": "Jane Doe", "lastName": "Doe", "version": 3, "verified": true }, { "username": "johndoe", "firstName": "John", "displayName": "John Doe", "lastName": "Doe", "version": 2, "verified": true } ] }`))
 	})
 
 	resp, _, err := testClient.GetTeamMembers(context.Background(), "team-abcd")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Members) != 2 || resp.Members[0].Username != "janedoe" {
+	if len(resp.Members) != 2 || resp.Members[0].Username != "janedoe" || resp.Members[0].DisplayName != "Jane Doe" || resp.Members[0].Version != 3 {
 		t.Errorf("unexpected members: %#v", resp)
 	}
 }
