@@ -256,18 +256,18 @@ func (c *Client) doAPICall(ctx context.Context, method string, fullURL string, r
 	var lastResp *http.Response
 
 	for attempt := 0; attempt <= c.retryConfig.MaxRetries; attempt++ {
+		// Response diagnostics describe only the current attempt. Reset them before
+		// waiting so a limiter or transport failure cannot retain an earlier HTTP
+		// response's status and body.
+		details.StatusCode = 0
+		details.ResponseBody = ""
+		details.RawResponse = nil
+
 		// Respect the client-side rate limit.
 		if err := c.rateLimiter.Wait(ctx); err != nil {
 			details.ErrorCategory = "rate_limit"
 			return details, fmt.Errorf("rate limiter error: %w", err)
 		}
-
-		// Response diagnostics describe only the current attempt. Without resetting
-		// them, a transport failure after a retryable HTTP response would leave the
-		// previous attempt's status and body attached to the final network error.
-		details.StatusCode = 0
-		details.ResponseBody = ""
-		details.RawResponse = nil
 
 		var body io.Reader
 		if bodyBytes != nil {

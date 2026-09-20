@@ -485,6 +485,35 @@ func TestEngineClearsStaleResponseAfterTransportFailure(t *testing.T) {
 	}
 }
 
+func TestEngineClearsStaleResponseBeforeRateLimiterFailure(t *testing.T) {
+	transport := &responseThenErrorTransport{}
+	client := NewConfigurableClient("id", "key", "http://example.invalid", http.Client{Transport: transport})
+	client.rateLimiter = rate.NewLimiter(rate.Every(time.Hour), 1)
+	client.retryConfig = RetryConfig{
+		MaxRetries:        1,
+		InitialBackoff:    time.Millisecond,
+		MaxBackoff:        time.Millisecond,
+		BackoffMultiplier: 1,
+		RetryableStatus:   []int{http.StatusInternalServerError},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	details, err := client.makePublicAPICall(ctx, http.MethodGet, "v1/incidents", nil, nil)
+	if err == nil {
+		t.Fatal("expected the retry's rate-limiter wait to fail")
+	}
+	if got := atomic.LoadInt32(&transport.calls); got != 1 {
+		t.Fatalf("expected the limiter to prevent the second HTTP attempt, got %d attempts", got)
+	}
+	if details.StatusCode != 0 || details.ResponseBody != "" || details.RawResponse != nil {
+		t.Errorf("stale response diagnostics survived the limiter failure: %#v", details)
+	}
+	if details.ErrorCategory != "rate_limit" {
+		t.Errorf("expected rate_limit category, got %q", details.ErrorCategory)
+	}
+}
+
 func TestEngineDoesNotCountCancelledBackoffAsRetry(t *testing.T) {
 	requestHandled := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
